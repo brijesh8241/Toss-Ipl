@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Sign Up - IPL Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="index.html#schedule-section">Schedule</a>
+            <a href="login.html" class="active login-btn">Admin Login</a>
+        </div>
+    </nav>
+
+    <div class="login-container">
+        <div class="login-box glass-panel">
+            <h2>Admin Sign Up</h2>
+            <p>Create a new account to update predictions.</p>
+            <div id="signup-error" class="error-text"></div>
+            <div id="signup-success" class="success-text"></div>
+            <form id="signup-form">
+                <div class="input-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" required placeholder="Choose a username">
+                </div>
+                <div class="input-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" required placeholder="Create a password">
+                </div>
+                <button type="submit" class="cta-btn full-width">Sign Up</button>
+            </form>
+            <p style="margin-top: 1.5rem; text-align: center; font-size: 0.9rem;">
+                Already have an account? <a href="login.html" style="color: var(--primary);">Login here</a>
+            </p>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('signup-form').addEventListener('submit', handleSignup);
+    </script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full Schedule - IPL 2026 Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="schedule.html" class="active">Schedule</a>
+            <a href="login.html" class="login-btn">Login</a>
+        </div>
+    </nav>
+
+    <section style="padding: 3rem 5%; max-width: 1200px; margin: 0 auto;">
+        <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 2rem;">Full Match <span class="gradient-text">Schedule</span></h2>
+
+        <!-- Loading State -->
+        <div id="loader" class="loader">Loading matches...</div>
+
+        <!-- Matches Container -->
+        <div id="matches-container" class="matches-grid">
+            <!-- Dynamic Content from JS -->
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 IPL Toss Predictions. All rights reserved.</p>
+    </footer>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', fetchScheduleMatches);
+    </script>
+</body>
+</html>

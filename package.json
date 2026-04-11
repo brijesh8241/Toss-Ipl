@@ -1,0 +1,16 @@
+{
+  "name": "ipl-prediction",
+  "version": "1.0.0",
+  "description": "IPL Toss Prediction App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.1",
+    "jsonwebtoken": "^9.0.3",
+    "sqlite3": "^5.1.7"
+  }
+}

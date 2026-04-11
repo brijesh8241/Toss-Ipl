@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - IPL Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="index.html#schedule-section">Schedule</a>
+            <a href="login.html" class="active login-btn">Login</a>
+        </div>
+    </nav>
+
+    <div class="login-container">
+        <div class="login-box glass-panel" style="max-width: 450px;">
+            <h2 style="text-align: center; margin-bottom: 0.5rem;">Login</h2>
+            
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="switchAuthTab('user')">User</button>
+                <button class="tab-btn" onclick="switchAuthTab('admin')">Admin</button>
+            </div>
+            
+            <div id="login-error" class="error-text"></div>
+            
+            <!-- User OTP Form -->
+            <div id="user-auth-section" class="auth-section active">
+                <p style="text-align: center; margin-bottom: 1rem; font-size: 0.95rem;">Login or Sign up instantly via OTP.</p>
+                <!-- Request OTP Form -->
+                <form id="otp-request-form">
+                    <div class="input-group">
+                        <label for="identifier">Email or Phone Number</label>
+                        <input type="text" id="identifier" required placeholder="Enter email or phone">
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Send OTP</button>
+                </form>
+                
+                <!-- Verify OTP Form (Hidden by Default) -->
+                <form id="otp-verify-form" style="display: none;">
+                    <p style="margin-bottom: 1rem; color: #00e676; text-align: center; font-weight: 600;">OTP sent! Check your terminal.</p>
+                    <div class="input-group">
+                        <label for="otp-code">Enter OTP</label>
+                        <input type="text" id="otp-code" required placeholder="4-digit OTP" maxlength="4" style="text-align: center; font-size: 1.2rem; letter-spacing: 4px;">
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Verify & Login</button>
+                    <p style="margin-top: 1rem; text-align: center; font-size: 0.8rem; cursor: pointer; color: var(--primary);" onclick="resetOtpForm()">Change email/phone</p>
+                </form>
+            </div>
+
+            <!-- Admin Password Form -->
+            <div id="admin-auth-section" class="auth-section" style="display: none;">
+                <p style="text-align: center; margin-bottom: 1rem; font-size: 0.95rem;">Dashboard access for routine predictions.</p>
+                <form id="login-form">
+                    <div class="input-group">
+                        <label for="username">Admin Username</label>
+                        <input type="text" id="username" required placeholder="Enter admin username">
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" required placeholder="Enter password">
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Sign In</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+    <script>
+        if(document.getElementById('login-form')) {
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+        }
+        if(document.getElementById('otp-request-form')) {
+            document.getElementById('otp-request-form').addEventListener('submit', handleOtpRequest);
+        }
+        if(document.getElementById('otp-verify-form')) {
+            document.getElementById('otp-verify-form').addEventListener('submit', handleOtpVerify);
+        }
+        
+        function switchAuthTab(type) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.auth-section').forEach(sec => {
+                sec.classList.remove('active');
+                sec.style.display = 'none';
+            });
+            
+            document.getElementById('login-error').textContent = '';
+            
+            if(type === 'user') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('user-auth-section').style.display = 'block';
+                setTimeout(() => document.getElementById('user-auth-section').classList.add('active'), 10);
+            } else {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('admin-auth-section').style.display = 'block';
+                setTimeout(() => document.getElementById('admin-auth-section').classList.add('active'), 10);
+            }
+        }
+
+        function resetOtpForm() {
+            document.getElementById('otp-verify-form').style.display = 'none';
+            document.getElementById('otp-request-form').style.display = 'block';
+            document.getElementById('login-error').textContent = '';
+            document.getElementById('otp-code').value = '';
+        }
+    </script>
+</body>
+</html>

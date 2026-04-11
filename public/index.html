@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPL 2026 Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html" class="active">Home</a>
+            <a href="schedule.html">Schedule</a>
+            <a href="login.html" class="login-btn">Login</a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Ultimate IPL 2026</h1>
+            <h2 class="gradient-text">Toss Predictions</h2>
+            <p>Get the most accurate routine day-to-day toss winning predictions for the craziest season of cricket.</p>
+            <a href="#today-section" class="cta-btn">View Today's Prediction</a>
+        </div>
+    </header>
+
+    <section id="today-section" class="schedule-section">
+        <h2>Today's <span class="gradient-text">Matches</span></h2>
+
+        <!-- Loading State -->
+        <div id="loader" class="loader">Loading matches...</div>
+
+        <!-- Matches Container -->
+        <div id="matches-container" class="matches-grid">
+            <!-- Dynamic Content from JS -->
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 IPL Toss Predictions. All rights reserved.</p>
+    </footer>
+
+    <script src="app.js"></script>
+    <script>
+        // Specific init for index
+        document.addEventListener('DOMContentLoaded', fetchTodayMatches);
+    </script>
+</body>
+
+</html>

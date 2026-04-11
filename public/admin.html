@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - IPL Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">View Site</a>
+            <a href="#" class="login-btn" onclick="handleLogout()">Logout</a>
+        </div>
+    </nav>
+
+    <div class="admin-container">
+        <div class="dashboard-header">
+            <h2>Welcome Admin!</h2>
+            <p>Update the daily toss predictions below. Changes reflect instantly on the public website.</p>
+        </div>
+
+        <div id="loader" class="loader">Loading secure data...</div>
+        
+        <div class="admin-grid" id="admin-matches-container">
+            <!-- Dynamic Content from JS -->
+        </div>
+
+        <!-- Modal for Updating Prediction -->
+        <div id="update-modal" class="modal">
+            <div class="modal-content glass-panel">
+                <span class="close-btn" onclick="closeModal()">&times;</span>
+                <h3>Update Prediction</h3>
+                <p id="modal-match-details"></p>
+                <form id="update-prediction-form">
+                    <input type="hidden" id="match-id">
+                    <div class="input-group">
+                        <label for="prediction-select">Predicted Winner</label>
+                        <select id="prediction-select">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Save Prediction</button>
+                    <p id="modal-msg" class="success-text"></p>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', checkAdminAuthAndLoad);
+    </script>
+</body>
+</html>
