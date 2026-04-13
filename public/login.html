@@ -27,6 +27,7 @@
             </div>
             
             <div id="login-error" class="error-text"></div>
+            <div id="otp-config-status" style="text-align: center; margin-bottom: 0.8rem; color: var(--text-muted); font-size: 0.85rem;"></div>
             
             <!-- User OTP Form -->
             <div id="user-auth-section" class="auth-section active">
@@ -80,6 +81,9 @@
         }
         if(document.getElementById('otp-verify-form')) {
             document.getElementById('otp-verify-form').addEventListener('submit', handleOtpVerify);
+        }
+        if (typeof checkOtpDeliveryStatus === 'function') {
+            checkOtpDeliveryStatus();
         }
         
         function switchAuthTab(type) {

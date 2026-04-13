@@ -166,6 +166,21 @@ async function handleLogin(e) {
     }
 }
 
+async function checkOtpDeliveryStatus() {
+    const el = document.getElementById('otp-config-status');
+    if (!el) return;
+    try {
+        const res = await fetch(`${API_URL}/otp-status`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('status not available');
+        const data = await res.json();
+        const email = data.emailConfigured ? 'Email OTP: configured' : 'Email OTP: not configured';
+        const sms = data.smsConfigured ? 'SMS OTP: configured' : 'SMS OTP: not configured';
+        el.textContent = `${email} | ${sms}`;
+    } catch {
+        el.textContent = 'OTP delivery status unavailable.';
+    }
+}
+
 async function handleOtpRequest(e) {
     e.preventDefault();
     const identifier = document.getElementById('identifier').value;
@@ -190,27 +205,24 @@ async function handleOtpRequest(e) {
         if (response.ok) {
             document.getElementById('otp-request-form').style.display = 'none';
             document.getElementById('otp-verify-form').style.display = 'block';
-            setTimeout(() => {
-                const lines = [];
-                if (data.delivery === 'email') {
-                    lines.push('OTP sent to your email.');
-                } else if (data.delivery === 'sms') {
-                    lines.push('OTP sent to your mobile number.');
-                } else {
-                    lines.push('OTP generated. Check server terminal output.');
-                }
-                if (data.warning) {
-                    lines.push(`Note: ${data.warning}`);
-                }
-                if (data.debugOtp) {
-                    lines.push(`Dev OTP: ${data.debugOtp}`);
-                }
-                alert(lines.join('\n'));
-            }, 600);
+            const lines = [];
+            if (data.delivery === 'email') {
+                lines.push('OTP sent to your email.');
+            } else if (data.delivery === 'sms') {
+                lines.push('OTP sent to your mobile number.');
+            } else {
+                lines.push('OTP generated. Check server terminal output.');
+            }
+            if (data.warning) lines.push(`Note: ${data.warning}`);
+            if (data.debugOtp) lines.push(`Dev OTP: ${data.debugOtp}`);
+            errorText.style.color = '#00e676';
+            errorText.textContent = lines.join(' ');
         } else {
+            errorText.style.color = '#ff4d4d';
             errorText.textContent = data.error || 'Failed to send OTP';
         }
     } catch (err) {
+        errorText.style.color = '#ff4d4d';
         errorText.textContent = 'Server error. Please try again.';
     } finally {
         requestBtn.textContent = 'Send OTP';
@@ -325,15 +337,19 @@ function openUpdateModal(id) {
     document.getElementById('match-id').value = id;
     document.getElementById('modal-match-details').textContent = `${match.team1} vs ${match.team2}`;
 
-    const pred = String(match.prediction || '').trim();
-    const t1 = String(match.team1).trim();
-    const t2 = String(match.team2).trim();
     const select = document.getElementById('prediction-select');
-    select.innerHTML = `
-        <option value="Pending" ${pred === 'Pending' ? 'selected' : ''}>Pending</option>
-        <option value="${escapeHtml(t1)}" ${pred === t1 ? 'selected' : ''}>${escapeHtml(t1)}</option>
-        <option value="${escapeHtml(t2)}" ${pred === t2 ? 'selected' : ''}>${escapeHtml(t2)}</option>
-    `;
+    const pred = String(match.prediction || '').trim();
+    const t1 = String(match.team1 || '').trim();
+    const t2 = String(match.team2 || '').trim();
+    const options = ['Pending', t1, t2];
+    select.innerHTML = '';
+    options.forEach((value) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        if (pred === value) opt.selected = true;
+        select.appendChild(opt);
+    });
 
     document.getElementById('modal-msg').textContent = '';
     document.getElementById('update-modal').classList.add('active');
@@ -349,6 +365,10 @@ if (document.getElementById('update-prediction-form')) {
         const id = document.getElementById('match-id').value;
         const prediction = document.getElementById('prediction-select').value;
         const msgEl = document.getElementById('modal-msg');
+        const saveBtn = e.target.querySelector('button[type="submit"]');
+        saveBtn.disabled = true;
+        const oldBtnText = saveBtn.textContent;
+        saveBtn.textContent = 'Saving...';
 
         try {
             const response = await fetch(`${API_URL}/matches/${id}`, {
@@ -386,6 +406,9 @@ if (document.getElementById('update-prediction-form')) {
         } catch (err) {
             msgEl.textContent = err.message || 'Network error — check that the app is open via the Node server (same URL as login).';
             msgEl.style.color = '#ff4d4d';
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = oldBtnText;
         }
     });
 }

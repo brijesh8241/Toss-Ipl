@@ -52,13 +52,6 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 `);
 
-// Prevent duplicate rows for the same fixture (duplicates can make a saved
-// prediction look like it "changed" back to Pending if the UI shows the other row).
-db.exec(`
-CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_unique
-ON matches(date, team1, team2);
-`);
-
 // If duplicates already exist (from earlier seeds), keep the best one.
 // Priority: non-Pending prediction > lowest id.
 db.transaction(() => {
@@ -91,6 +84,12 @@ db.transaction(() => {
     }
 })();
 
+// Prevent duplicate rows for the same fixture (after cleanup).
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_unique
+ON matches(date, team1, team2);
+`);
+
 ensureFixturesSynced(db);
 
 setImmediate(() => {
@@ -115,6 +114,14 @@ function isEmail(value) {
 
 function isPhone(value) {
     return /^\+?[0-9]{10,15}$/.test(String(value || '').trim());
+}
+
+function normalizeIdentifier(value) {
+    const raw = String(value || '').trim();
+    const compactPhone = raw.replace(/[\s\-()]/g, '');
+    if (isEmail(raw)) return raw.toLowerCase();
+    if (isPhone(compactPhone)) return compactPhone;
+    return raw;
 }
 
 async function sendOtpEmail(to, otp) {
@@ -171,10 +178,21 @@ async function sendOtpSms(to, otp) {
     return { ok: true, method: 'sms' };
 }
 
+app.get('/api/otp-status', (_req, res) => {
+    res.json({
+        emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.OTP_FROM_EMAIL),
+        smsConfigured: Boolean(
+            process.env.TWILIO_ACCOUNT_SID &&
+            process.env.TWILIO_AUTH_TOKEN &&
+            process.env.TWILIO_FROM_NUMBER
+        )
+    });
+});
+
 // Request OTP
-app.post('/api/request-otp', (req, res) => {
+app.post('/api/request-otp', async (req, res) => {
     const { identifier } = req.body;
-    const normalized = String(identifier || '').trim();
+    const normalized = normalizeIdentifier(identifier);
     if (!normalized) return res.status(400).json({ error: "Missing identifier" });
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -195,34 +213,30 @@ app.post('/api/request-otp', (req, res) => {
         return res.json(out);
     };
 
-    const finalize = async () => {
-        try {
-            if (isEmail(normalized)) {
-                const emailResult = await sendOtpEmail(normalized, otp);
-                if (emailResult.ok) return respond({ delivery: 'email' });
-                return respond({ delivery: 'terminal', warning: emailResult.reason });
-            }
-            if (isPhone(normalized)) {
-                const smsResult = await sendOtpSms(normalized, otp);
-                if (smsResult.ok) return respond({ delivery: 'sms' });
-                return respond({ delivery: 'terminal', warning: smsResult.reason });
-            }
-            return respond({
-                delivery: 'terminal',
-                warning: 'Enter a valid email or phone number for external delivery.'
-            });
-        } catch (err) {
-            return respond({ delivery: 'terminal', warning: err.message || 'OTP delivery fallback used' });
+    try {
+        if (isEmail(normalized)) {
+            const emailResult = await sendOtpEmail(normalized, otp);
+            if (emailResult.ok) return respond({ delivery: 'email' });
+            return respond({ delivery: 'terminal', warning: emailResult.reason });
         }
-    };
-
-    finalize();
+        if (isPhone(normalized)) {
+            const smsResult = await sendOtpSms(normalized, otp);
+            if (smsResult.ok) return respond({ delivery: 'sms' });
+            return respond({ delivery: 'terminal', warning: smsResult.reason });
+        }
+        return respond({
+            delivery: 'terminal',
+            warning: 'Enter a valid email or phone number for external delivery.'
+        });
+    } catch (err) {
+        return respond({ delivery: 'terminal', warning: err.message || 'OTP delivery fallback used' });
+    }
 });
 
 // Verify OTP
 app.post('/api/verify-otp', (req, res) => {
     const { identifier, otp } = req.body;
-    const normalized = String(identifier || '').trim();
+    const normalized = normalizeIdentifier(identifier);
     const data = otpStore[normalized];
     if (!data || data.otp !== otp || Date.now() > data.expires) {
         return res.status(401).json({ error: "Invalid OTP" });
