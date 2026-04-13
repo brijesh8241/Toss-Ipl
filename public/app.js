@@ -1,5 +1,7 @@
 // Universal fetch configuration
 const API_URL = '/api';
+const MATCHES_CACHE_KEY = 'ipl_matches_cache_v1';
+const USER_PROFILE_CACHE_KEY = 'ipl_user_profile_v1';
 
 function localISODate() {
     const d = new Date();
@@ -29,6 +31,149 @@ function sortMatchesChronologically(matches) {
     });
 }
 
+function saveMatchesCache(matches) {
+    try {
+        localStorage.setItem(MATCHES_CACHE_KEY, JSON.stringify(matches || []));
+    } catch (_) {
+        // ignore storage errors
+    }
+}
+
+function loadMatchesCache() {
+    try {
+        const raw = localStorage.getItem(MATCHES_CACHE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function saveUserProfileCache(user) {
+    try {
+        if (!user) return;
+        localStorage.setItem(USER_PROFILE_CACHE_KEY, JSON.stringify(user));
+    } catch (_) {}
+}
+
+function loadUserProfileCache() {
+    try {
+        const raw = localStorage.getItem(USER_PROFILE_CACHE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (_) {
+        return null;
+    }
+}
+
+function clearUserProfileCache() {
+    try {
+        localStorage.removeItem(USER_PROFILE_CACHE_KEY);
+    } catch (_) {}
+}
+
+function getInitials(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'U';
+    return parts.slice(0, 2).map((p) => p[0].toUpperCase()).join('');
+}
+
+function readImageAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Image read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function renderNavbarProfile(user) {
+    const target = document.getElementById('nav-user-slot');
+    if (!target) return;
+    if (!user) {
+        target.innerHTML = `<a href="login.html" class="login-btn">Login</a>`;
+        return;
+    }
+    const name = escapeHtml(user.displayName || user.username || 'User');
+    const avatar = user.avatarData
+        ? `<img src="${user.avatarData}" alt="${name}" class="nav-avatar-img">`
+        : `<div class="nav-avatar-fallback">${escapeHtml(getInitials(name))}</div>`;
+    const adminBadge = user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : '';
+    target.innerHTML = `
+        <div class="nav-user-chip" onclick="openProfileModal()">
+            ${avatar}
+            <span class="nav-user-name">${name}</span>
+            ${adminBadge}
+        </div>
+        <a href="#" class="login-btn" onclick="handleLogout()">Logout</a>
+    `;
+}
+
+async function hydrateNavbarProfile() {
+    const cached = loadUserProfileCache();
+    if (cached) renderNavbarProfile(cached);
+    try {
+        const response = await fetch(`${API_URL}/me`, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) {
+            clearUserProfileCache();
+            renderNavbarProfile(null);
+            return;
+        }
+        const data = await response.json();
+        const user = data.user || null;
+        saveUserProfileCache(user);
+        renderNavbarProfile(user);
+    } catch (_) {
+        renderNavbarProfile(cached || null);
+    }
+}
+
+function openProfileModal() {
+    const modal = document.getElementById('profile-modal');
+    if (!modal) return;
+    const user = loadUserProfileCache();
+    if (!user) return;
+    const nameInput = document.getElementById('profile-display-name');
+    if (nameInput) nameInput.value = user.displayName || user.username || '';
+    modal.classList.add('active');
+}
+
+function closeProfileModal() {
+    const modal = document.getElementById('profile-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function saveProfile(e) {
+    e.preventDefault();
+    const msg = document.getElementById('profile-msg');
+    const nameInput = document.getElementById('profile-display-name');
+    const avatarInput = document.getElementById('profile-avatar');
+    const payload = { displayName: String(nameInput?.value || '').trim() };
+    if (avatarInput?.files?.[0]) {
+        payload.avatarData = await readImageAsDataURL(avatarInput.files[0]);
+    }
+    const response = await fetch(`${API_URL}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        if (msg) {
+            msg.style.color = '#ff4d4d';
+            msg.textContent = data.error || 'Profile update failed';
+        }
+        return;
+    }
+    if (msg) {
+        msg.style.color = '#00e676';
+        msg.textContent = 'Profile updated';
+    }
+    await hydrateNavbarProfile();
+}
+
 function showLoader(id) {
     const loader = document.getElementById(id);
     if (loader) loader.style.display = 'block';
@@ -43,7 +188,10 @@ async function fetchTodayMatches() {
     showLoader('loader');
     try {
         const response = await fetch(`${API_URL}/matches`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const matches = await response.json();
+        if (!Array.isArray(matches)) throw new Error('Invalid response');
+        saveMatchesCache(matches);
         
         // Filter for ONLY today's matches
         const todayStr = localISODate();
@@ -51,9 +199,13 @@ async function fetchTodayMatches() {
         renderPublicMatches(todayMatches, "There are no matches scheduled for today.");
     } catch (error) {
         console.error("Error fetching matches:", error);
-        if(document.getElementById('matches-container')) {
-            document.getElementById('matches-container').innerHTML = '<p class="error-text">Failed to load schedule. Try again later.</p>';
-        }
+        const cached = loadMatchesCache();
+        const todayStr = localISODate();
+        const todayMatches = cached.filter(m => m.date === todayStr);
+        renderPublicMatches(
+            todayMatches,
+            "No cached matches available right now."
+        );
     } finally {
         hideLoader('loader');
     }
@@ -70,6 +222,7 @@ async function fetchScheduleMatches() {
         if (!Array.isArray(matches)) {
             throw new Error('Invalid response');
         }
+        saveMatchesCache(matches);
         const sorted = sortMatchesChronologically(matches);
         const summary = document.getElementById('schedule-summary');
         if (summary) {
@@ -82,9 +235,12 @@ async function fetchScheduleMatches() {
         );
     } catch (error) {
         console.error("Error fetching matches:", error);
-        if(document.getElementById('matches-container')) {
-            document.getElementById('matches-container').innerHTML = '<p class="error-text">Failed to load schedule. Try again later.</p>';
+        const cached = sortMatchesChronologically(loadMatchesCache());
+        const summary = document.getElementById('schedule-summary');
+        if (summary) {
+            summary.textContent = `${cached.length} cached matches loaded (server currently unavailable).`;
         }
+        renderPublicMatches(cached, "No cached matches available right now.", { mapsLink: true });
     } finally {
         hideLoader('loader');
     }
@@ -184,6 +340,8 @@ async function checkOtpDeliveryStatus() {
 async function handleOtpRequest(e) {
     e.preventDefault();
     const identifier = document.getElementById('identifier').value;
+    const displayName = document.getElementById('user-display-name')?.value || '';
+    const avatarFile = document.getElementById('user-avatar')?.files?.[0] || null;
     const errorText = document.getElementById('login-error');
     const requestBtn = e.target.querySelector('button');
 
@@ -193,11 +351,13 @@ async function handleOtpRequest(e) {
     requestBtn.disabled = true;
 
     try {
+        let avatarData = null;
+        if (avatarFile) avatarData = await readImageAsDataURL(avatarFile);
         const response = await fetch(`${API_URL}/request-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ identifier })
+            body: JSON.stringify({ identifier, displayName, avatarData })
         });
 
         const data = await response.json();
@@ -217,6 +377,7 @@ async function handleOtpRequest(e) {
             if (data.debugOtp) lines.push(`Dev OTP: ${data.debugOtp}`);
             errorText.style.color = '#00e676';
             errorText.textContent = lines.join(' ');
+            alert(lines.join('\n'));
         } else {
             errorText.style.color = '#ff4d4d';
             errorText.textContent = data.error || 'Failed to send OTP';
@@ -252,6 +413,7 @@ async function handleOtpVerify(e) {
         const data = await response.json();
 
         if (response.ok) {
+            await hydrateNavbarProfile();
             window.location.href = 'index.html';
         } else {
             errorText.textContent = data.error || 'Invalid OTP';
@@ -266,6 +428,7 @@ async function handleOtpVerify(e) {
 
 async function handleLogout() {
     await fetch(`${API_URL}/logout`, { method: 'POST', credentials: 'include' });
+    clearUserProfileCache();
     window.location.href = 'index.html';
 }
 
@@ -294,9 +457,13 @@ async function fetchAdminMatches() {
         }
         const list = await response.json();
         adminMatches = Array.isArray(list) ? sortMatchesChronologically(list) : [];
+        saveMatchesCache(adminMatches);
         renderAdminMatches(adminMatches);
     } catch (error) {
         console.error("Error fetching matches:", error);
+        const cached = sortMatchesChronologically(loadMatchesCache());
+        adminMatches = cached;
+        renderAdminMatches(adminMatches);
     } finally {
         hideLoader('loader');
     }
@@ -389,6 +556,12 @@ if (document.getElementById('update-prediction-form')) {
             }
 
             if (response.ok) {
+                // Apply immediately to local list/cache so it never appears reset in UI.
+                adminMatches = adminMatches.map((m) =>
+                    String(m.id) === String(id) ? { ...m, prediction } : m
+                );
+                saveMatchesCache(adminMatches);
+                renderAdminMatches(adminMatches);
                 msgEl.textContent = 'Updated successfully!';
                 msgEl.style.color = '#00e676';
                 setTimeout(() => {
@@ -412,3 +585,11 @@ if (document.getElementById('update-prediction-form')) {
         }
     });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    hydrateNavbarProfile();
+    const profileForm = document.getElementById('profile-form');
+    if (profileForm) {
+        profileForm.addEventListener('submit', saveProfile);
+    }
+});

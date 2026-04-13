@@ -15,7 +15,7 @@
         <div class="nav-links">
             <a href="index.html" class="active">Home</a>
             <a href="schedule.html">Schedule</a>
-            <a href="login.html" class="login-btn">Login</a>
+            <span id="nav-user-slot"><a href="login.html" class="login-btn">Login</a></span>
         </div>
     </nav>
 
@@ -59,6 +59,25 @@
     <footer>
         <p>&copy; 2026 IPL Toss Predictions. All rights reserved.</p>
     </footer>
+
+    <div id="profile-modal" class="modal">
+        <div class="modal-content glass-panel">
+            <span class="close-btn" onclick="closeProfileModal()">&times;</span>
+            <h3>Profile Settings</h3>
+            <form id="profile-form">
+                <div class="input-group">
+                    <label for="profile-display-name">Display Name</label>
+                    <input type="text" id="profile-display-name" required>
+                </div>
+                <div class="input-group">
+                    <label for="profile-avatar">Profile Picture</label>
+                    <input type="file" id="profile-avatar" accept="image/*">
+                </div>
+                <button type="submit" class="cta-btn full-width">Save Profile</button>
+                <p id="profile-msg" class="success-text"></p>
+            </form>
+        </div>
+    </div>
 
     <script src="app.js"></script>
     <script>

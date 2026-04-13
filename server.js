@@ -38,7 +38,9 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
-    password TEXT
+    password TEXT,
+    display_name TEXT,
+    avatar_data TEXT
 );
 
 CREATE TABLE IF NOT EXISTS matches (
@@ -51,6 +53,18 @@ CREATE TABLE IF NOT EXISTS matches (
     prediction TEXT
 );
 `);
+
+function ensureUserColumns() {
+    const columns = db.prepare(`PRAGMA table_info(users)`).all().map((c) => c.name);
+    if (!columns.includes('display_name')) {
+        db.exec(`ALTER TABLE users ADD COLUMN display_name TEXT`);
+    }
+    if (!columns.includes('avatar_data')) {
+        db.exec(`ALTER TABLE users ADD COLUMN avatar_data TEXT`);
+    }
+}
+
+ensureUserColumns();
 
 // If duplicates already exist (from earlier seeds), keep the best one.
 // Priority: non-Pending prediction > lowest id.
@@ -191,14 +205,17 @@ app.get('/api/otp-status', (_req, res) => {
 
 // Request OTP
 app.post('/api/request-otp', async (req, res) => {
-    const { identifier } = req.body;
+    const { identifier, displayName, avatarData } = req.body;
     const normalized = normalizeIdentifier(identifier);
     if (!normalized) return res.status(400).json({ error: "Missing identifier" });
+    const normalizedName = String(displayName || '').trim();
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     otpStore[normalized] = {
         otp,
-        expires: Date.now() + 5 * 60 * 1000
+        expires: Date.now() + 5 * 60 * 1000,
+        displayName: normalizedName || null,
+        avatarData: String(avatarData || '').slice(0, 2_000_000) || null
     };
 
     // Terminal fallback is always available for local development.
@@ -244,13 +261,25 @@ app.post('/api/verify-otp', (req, res) => {
 
     delete otpStore[normalized];
 
-    db.prepare(`INSERT OR IGNORE INTO users (username) VALUES (?)`)
-        .run(normalized);
+    db.prepare(`
+        INSERT OR IGNORE INTO users (username, display_name, avatar_data)
+        VALUES (?, ?, ?)
+    `).run(normalized, data.displayName || normalized, data.avatarData || null);
 
-    const user = db.prepare(`SELECT * FROM users WHERE username = ?`)
+    if (data.displayName || data.avatarData) {
+        db.prepare(`
+            UPDATE users
+            SET
+                display_name = COALESCE(?, display_name),
+                avatar_data = COALESCE(?, avatar_data)
+            WHERE username = ?
+        `).run(data.displayName || null, data.avatarData || null, normalized);
+    }
+
+    const user = db.prepare(`SELECT id, username FROM users WHERE username = ?`)
         .get(normalized);
 
-    const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
 
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
 
@@ -271,7 +300,7 @@ app.post('/api/login', (req, res) => {
 
     if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-    const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
 
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
 
@@ -343,7 +372,37 @@ app.put('/api/matches/:id', authenticate, (req, res) => {
 // Me
 app.get('/api/me', authenticate, (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.json({ user: req.user });
+    const u = db.prepare(`
+        SELECT id, username, display_name, avatar_data
+        FROM users
+        WHERE id = ?
+    `).get(req.user.id);
+    if (!u) return res.status(404).json({ error: 'User not found' });
+    res.json({
+        user: {
+            id: u.id,
+            username: u.username,
+            displayName: u.display_name || u.username,
+            avatarData: u.avatar_data || null,
+            isAdmin: u.username === 'admin'
+        }
+    });
+});
+
+app.put('/api/profile', authenticate, (req, res) => {
+    const displayName = String(req.body?.displayName || '').trim();
+    const avatarData = req.body?.avatarData ? String(req.body.avatarData).slice(0, 2_000_000) : null;
+    if (!displayName && !avatarData) {
+        return res.status(400).json({ error: 'No profile update provided' });
+    }
+    db.prepare(`
+        UPDATE users
+        SET
+            display_name = CASE WHEN ? <> '' THEN ? ELSE display_name END,
+            avatar_data = COALESCE(?, avatar_data)
+        WHERE id = ?
+    `).run(displayName, displayName, avatarData, req.user.id);
+    res.json({ success: true });
 });
 
 // Start server

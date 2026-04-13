@@ -35,8 +35,16 @@
                 <!-- Request OTP Form -->
                 <form id="otp-request-form">
                     <div class="input-group">
+                        <label for="user-display-name">User Name</label>
+                        <input type="text" id="user-display-name" required placeholder="Enter your name">
+                    </div>
+                    <div class="input-group">
                         <label for="identifier">Email or Phone Number</label>
                         <input type="text" id="identifier" required placeholder="Enter email or phone">
+                    </div>
+                    <div class="input-group">
+                        <label for="user-avatar">Profile Picture (optional)</label>
+                        <input type="file" id="user-avatar" accept="image/*">
                     </div>
                     <button type="submit" class="cta-btn full-width">Send OTP</button>
                 </form>

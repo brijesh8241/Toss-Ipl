@@ -12,7 +12,7 @@
         <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
         <div class="nav-links">
             <a href="index.html">View Site</a>
-            <a href="#" class="login-btn" onclick="handleLogout()">Logout</a>
+            <span id="nav-user-slot"><a href="#" class="login-btn" onclick="handleLogout()">Logout</a></span>
         </div>
     </nav>
 
@@ -44,6 +44,25 @@
                     </div>
                     <button type="submit" class="cta-btn full-width">Save Prediction</button>
                     <p id="modal-msg" class="success-text"></p>
+                </form>
+            </div>
+        </div>
+
+        <div id="profile-modal" class="modal">
+            <div class="modal-content glass-panel">
+                <span class="close-btn" onclick="closeProfileModal()">&times;</span>
+                <h3>Profile Settings</h3>
+                <form id="profile-form">
+                    <div class="input-group">
+                        <label for="profile-display-name">Display Name</label>
+                        <input type="text" id="profile-display-name" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="profile-avatar">Profile Picture</label>
+                        <input type="file" id="profile-avatar" accept="image/*">
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Save Profile</button>
+                    <p id="profile-msg" class="success-text"></p>
                 </form>
             </div>
         </div>

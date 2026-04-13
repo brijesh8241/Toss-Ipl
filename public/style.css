@@ -87,6 +87,56 @@ body::after {
     transition: color 0.3s ease;
 }
 
+.nav-links #nav-user-slot {
+    margin-left: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.nav-user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+}
+
+.nav-avatar-img,
+.nav-avatar-fallback {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.nav-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.nav-user-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nav-admin-badge {
+    font-size: 0.65rem;
+    color: #fff;
+    background: var(--accent);
+    border-radius: 999px;
+    padding: 0.1rem 0.4rem;
+}
+
 .nav-links a:hover, .nav-links a.active {
     color: var(--primary);
 }
