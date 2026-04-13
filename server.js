@@ -3,17 +3,23 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const { ensureFixturesSynced } = require('./ipl2026-fixtures');
+const { refreshVenueGeocodesIfConfigured, attachGeocodes } = require('./venueGeocode');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SECRET_KEY = "ipl2026_super_secret_key";
 
-// Middleware
+// Middleware — never use Access-Control-Allow-Origin: * with credentials (breaks admin PUT in many browsers)
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    const origin = req.headers.origin;
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
@@ -25,6 +31,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ✅ Database (SYNC - better-sqlite3)
 const db = new Database('./prediction.db');
+db.pragma('journal_mode = WAL');
 
 // Create tables
 db.exec(`
@@ -45,25 +52,19 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 `);
 
+ensureFixturesSynced(db);
+
+setImmediate(() => {
+    refreshVenueGeocodesIfConfigured(db).catch((err) => {
+        console.warn('Google Geocoding (optional):', err.message || err);
+    });
+});
+
 // Seed users
 const userCount = db.prepare(`SELECT COUNT(*) as count FROM users`).get();
 if (userCount.count === 0) {
     db.prepare(`INSERT INTO users (username, password) VALUES (?, ?)`)
         .run('admin', 'password123');
-}
-
-// Seed matches
-const matchCount = db.prepare(`SELECT COUNT(*) as count FROM matches`).get();
-if (matchCount.count === 0) {
-    const sampleMatches = [
-        ['2026-04-11', '3:30 PM IST', 'PBKS', 'SRH', 'Chandigarh Stadium', 'Pending'],
-        ['2026-04-11', '7:30 PM IST', 'CSK', 'DC', 'Chennai Stadium', 'Pending'],
-        ['2026-04-12', '3:30 PM IST', 'LSG', 'GT', 'Lucknow Stadium', 'Pending'],
-        ['2026-04-12', '7:30 PM IST', 'MI', 'RCB', 'Mumbai Stadium', 'Pending']
-    ];
-
-    const stmt = db.prepare(`INSERT INTO matches (date, time, team1, team2, stadium, prediction) VALUES (?, ?, ?, ?, ?, ?)`);
-    sampleMatches.forEach(m => stmt.run(m));
 }
 
 // OTP store
@@ -105,8 +106,13 @@ app.post('/api/verify-otp', (req, res) => {
 
     const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1d' });
 
-    res.cookie('token', token, { httpOnly: true });
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
 
+    res.json({ success: true });
+});
+
+app.post('/api/logout', (req, res) => {
+    res.clearCookie('token', { httpOnly: true, sameSite: 'lax', path: '/' });
     res.json({ success: true });
 });
 
@@ -121,7 +127,7 @@ app.post('/api/login', (req, res) => {
 
     const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1d' });
 
-    res.cookie('token', token, { httpOnly: true });
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
 
     res.json({ success: true });
 });
@@ -139,25 +145,58 @@ function authenticate(req, res, next) {
     }
 }
 
-// Get matches
+// Get matches (re-sync official fixtures first so the schedule always stays complete)
 app.get('/api/matches', (req, res) => {
-    const matches = db.prepare(`SELECT * FROM matches ORDER BY date ASC`).all();
-    res.json(matches);
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    try {
+        ensureFixturesSynced(db);
+        const matches = db.prepare(
+            `SELECT * FROM matches ORDER BY date ASC, time ASC, id ASC`
+        ).all();
+        res.json(attachGeocodes(matches));
+    } catch (err) {
+        console.error('GET /api/matches:', err);
+        res.status(500).json({ error: 'Failed to load matches' });
+    }
 });
 
 // Update match
 app.put('/api/matches/:id', authenticate, (req, res) => {
-    const { prediction } = req.body;
-    const { id } = req.params;
+    try {
+        const { prediction } = req.body || {};
+        const id = parseInt(req.params.id, 10);
+        if (!Number.isFinite(id)) {
+            return res.status(400).json({ error: 'Invalid match id' });
+        }
+        if (prediction === undefined || prediction === null || String(prediction).trim() === '') {
+            return res.status(400).json({ error: 'Missing prediction' });
+        }
 
-    db.prepare(`UPDATE matches SET prediction = ? WHERE id = ?`)
-        .run(prediction, id);
+        const match = db.prepare(`SELECT team1, team2 FROM matches WHERE id = ?`).get(id);
+        if (!match) {
+            return res.status(404).json({ error: 'Match not found' });
+        }
 
-    res.json({ success: true });
+        const value = String(prediction).trim();
+        const t1 = String(match.team1).trim();
+        const t2 = String(match.team2).trim();
+        const allowed = new Set(['Pending', t1, t2]);
+        if (!allowed.has(value)) {
+            return res.status(400).json({ error: 'Invalid prediction value' });
+        }
+
+        db.prepare(`UPDATE matches SET prediction = ? WHERE id = ?`).run(value, id);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('PUT /api/matches:', err);
+        res.status(500).json({ error: 'Could not save prediction' });
+    }
 });
 
 // Me
 app.get('/api/me', authenticate, (req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.json({ user: req.user });
 });
 
