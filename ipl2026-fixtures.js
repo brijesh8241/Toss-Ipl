@@ -114,19 +114,14 @@ function buildFixtures() {
  */
 function ensureFixturesSynced(db) {
     const fixtures = buildFixtures();
-    const select = db.prepare(
-        'SELECT id FROM matches WHERE date = ? AND team1 = ? AND team2 = ?'
-    );
     const insert = db.prepare(
-        `INSERT INTO matches (date, time, team1, team2, stadium, prediction)
+        `INSERT OR IGNORE INTO matches (date, time, team1, team2, stadium, prediction)
          VALUES (?, ?, ?, ?, ?, ?)`
     );
 
     const insertMany = db.transaction((list) => {
         for (const f of list) {
-            if (!select.get(f.date, f.team1, f.team2)) {
-                insert.run(f.date, f.time, f.team1, f.team2, f.stadium, 'Pending');
-            }
+            insert.run(f.date, f.time, f.team1, f.team2, f.stadium, 'Pending');
         }
     });
 

@@ -474,6 +474,32 @@ body::after {
     display: none;
 }
 
+.terms-section {
+    padding: 1rem 5% 2.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.terms-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+}
+
+.terms-card h3 {
+    color: var(--primary);
+    font-size: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.terms-card p {
+    color: var(--text-main);
+    margin-bottom: 0.6rem;
+    line-height: 1.7;
+}
+
 /* Footer */
 footer {
     text-align: center;

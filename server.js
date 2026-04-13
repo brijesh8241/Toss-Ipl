@@ -52,6 +52,45 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 `);
 
+// Prevent duplicate rows for the same fixture (duplicates can make a saved
+// prediction look like it "changed" back to Pending if the UI shows the other row).
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_unique
+ON matches(date, team1, team2);
+`);
+
+// If duplicates already exist (from earlier seeds), keep the best one.
+// Priority: non-Pending prediction > lowest id.
+db.transaction(() => {
+    const dups = db.prepare(`
+        SELECT date, team1, team2, COUNT(*) as c
+        FROM matches
+        GROUP BY date, team1, team2
+        HAVING c > 1
+    `).all();
+
+    const pick = db.prepare(`
+        SELECT id, prediction
+        FROM matches
+        WHERE date = ? AND team1 = ? AND team2 = ?
+        ORDER BY (prediction <> 'Pending') DESC, id ASC
+        LIMIT 1
+    `);
+    const ids = db.prepare(`
+        SELECT id FROM matches
+        WHERE date = ? AND team1 = ? AND team2 = ?
+    `);
+    const del = db.prepare(`DELETE FROM matches WHERE id = ?`);
+
+    for (const g of dups) {
+        const keep = pick.get(g.date, g.team1, g.team2);
+        const allIds = ids.all(g.date, g.team1, g.team2);
+        for (const row of allIds) {
+            if (row.id !== keep.id) del.run(row.id);
+        }
+    }
+})();
+
 ensureFixturesSynced(db);
 
 setImmediate(() => {
@@ -70,39 +109,132 @@ if (userCount.count === 0) {
 // OTP store
 const otpStore = {};
 
+function isEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function isPhone(value) {
+    return /^\+?[0-9]{10,15}$/.test(String(value || '').trim());
+}
+
+async function sendOtpEmail(to, otp) {
+    const apiKey = process.env.RESEND_API_KEY;
+    const from = process.env.OTP_FROM_EMAIL;
+    if (!apiKey || !from) return { ok: false, reason: 'Email service is not configured' };
+
+    const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            from,
+            to: [to],
+            subject: 'Your IPL Toss Prediction OTP',
+            html: `<p>Your OTP is <strong>${otp}</strong>.</p><p>This OTP expires in 5 minutes.</p>`
+        })
+    });
+
+    if (!response.ok) {
+        const raw = await response.text();
+        return { ok: false, reason: `Email API error: ${raw.slice(0, 180)}` };
+    }
+    return { ok: true, method: 'email' };
+}
+
+async function sendOtpSms(to, otp) {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    const from = process.env.TWILIO_FROM_NUMBER;
+    if (!sid || !token || !from) return { ok: false, reason: 'SMS service is not configured' };
+
+    const auth = Buffer.from(`${sid}:${token}`).toString('base64');
+    const body = new URLSearchParams({
+        To: to,
+        From: from,
+        Body: `Your IPL Toss Prediction OTP is ${otp}. It expires in 5 minutes.`
+    });
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body
+    });
+
+    if (!response.ok) {
+        const raw = await response.text();
+        return { ok: false, reason: `SMS API error: ${raw.slice(0, 180)}` };
+    }
+    return { ok: true, method: 'sms' };
+}
+
 // Request OTP
 app.post('/api/request-otp', (req, res) => {
     const { identifier } = req.body;
-    if (!identifier) return res.status(400).json({ error: "Missing identifier" });
+    const normalized = String(identifier || '').trim();
+    if (!normalized) return res.status(400).json({ error: "Missing identifier" });
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
-    otpStore[identifier] = {
+    otpStore[normalized] = {
         otp,
         expires: Date.now() + 5 * 60 * 1000
     };
 
-    console.log(`OTP for ${identifier}: ${otp}`);
+    // Terminal fallback is always available for local development.
+    const terminalLine = `OTP for ${normalized}: ${otp} (valid 5 minutes)`;
+    console.log('='.repeat(50));
+    console.log(terminalLine);
+    console.log('='.repeat(50));
 
-    res.json({ success: true });
+    const respond = (payload = {}) => {
+        const out = { success: true, ...payload };
+        if (process.env.NODE_ENV !== 'production') out.debugOtp = otp;
+        return res.json(out);
+    };
+
+    const finalize = async () => {
+        try {
+            if (isEmail(normalized)) {
+                const emailResult = await sendOtpEmail(normalized, otp);
+                if (emailResult.ok) return respond({ delivery: 'email' });
+                return respond({ delivery: 'terminal', warning: emailResult.reason });
+            }
+            if (isPhone(normalized)) {
+                const smsResult = await sendOtpSms(normalized, otp);
+                if (smsResult.ok) return respond({ delivery: 'sms' });
+                return respond({ delivery: 'terminal', warning: smsResult.reason });
+            }
+            return respond({
+                delivery: 'terminal',
+                warning: 'Enter a valid email or phone number for external delivery.'
+            });
+        } catch (err) {
+            return respond({ delivery: 'terminal', warning: err.message || 'OTP delivery fallback used' });
+        }
+    };
+
+    finalize();
 });
 
 // Verify OTP
 app.post('/api/verify-otp', (req, res) => {
     const { identifier, otp } = req.body;
-
-    const data = otpStore[identifier];
+    const normalized = String(identifier || '').trim();
+    const data = otpStore[normalized];
     if (!data || data.otp !== otp || Date.now() > data.expires) {
         return res.status(401).json({ error: "Invalid OTP" });
     }
 
-    delete otpStore[identifier];
+    delete otpStore[normalized];
 
     db.prepare(`INSERT OR IGNORE INTO users (username) VALUES (?)`)
-        .run(identifier);
+        .run(normalized);
 
     const user = db.prepare(`SELECT * FROM users WHERE username = ?`)
-        .get(identifier);
+        .get(normalized);
 
     const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1d' });
 

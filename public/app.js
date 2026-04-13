@@ -191,7 +191,21 @@ async function handleOtpRequest(e) {
             document.getElementById('otp-request-form').style.display = 'none';
             document.getElementById('otp-verify-form').style.display = 'block';
             setTimeout(() => {
-                alert('📱 OTP sent (dev mode). Check the server terminal for your code.');
+                const lines = [];
+                if (data.delivery === 'email') {
+                    lines.push('OTP sent to your email.');
+                } else if (data.delivery === 'sms') {
+                    lines.push('OTP sent to your mobile number.');
+                } else {
+                    lines.push('OTP generated. Check server terminal output.');
+                }
+                if (data.warning) {
+                    lines.push(`Note: ${data.warning}`);
+                }
+                if (data.debugOtp) {
+                    lines.push(`Dev OTP: ${data.debugOtp}`);
+                }
+                alert(lines.join('\n'));
             }, 600);
         } else {
             errorText.textContent = data.error || 'Failed to send OTP';
