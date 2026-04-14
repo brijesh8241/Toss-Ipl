@@ -89,9 +89,10 @@ body::after {
 
 .nav-links #nav-user-slot {
     margin-left: 2rem;
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 1rem;
+    flex-wrap: nowrap;
 }
 
 .nav-user-chip {
@@ -99,9 +100,11 @@ body::after {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    padding: 0.3rem 0.6rem;
+    padding: 0.4rem 0.8rem;
     border: 1px solid var(--glass-border);
     border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .nav-avatar-img,

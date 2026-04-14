@@ -333,7 +333,8 @@ async function handleLogin(e) {
         const data = await response.json();
 
         if (response.ok) {
-            window.location.href = 'update-predictions.html';
+            // Force redirect to update-predictions page (no cache)
+            window.location.replace('update-predictions.html');
         } else {
             errorText.textContent = data.error || 'Login failed';
         }
