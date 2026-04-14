@@ -226,7 +226,8 @@ app.post('/api/request-otp', async (req, res) => {
 
     const respond = (payload = {}) => {
         const out = { success: true, ...payload };
-        if (process.env.NODE_ENV !== 'production') out.debugOtp = otp;
+        // Always return OTP so it can be shown in browser popup
+        out.otp = otp;
         return res.json(out);
     };
 

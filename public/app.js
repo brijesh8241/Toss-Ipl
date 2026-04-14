@@ -149,10 +149,24 @@ async function saveProfile(e) {
     const msg = document.getElementById('profile-msg');
     const nameInput = document.getElementById('profile-display-name');
     const avatarInput = document.getElementById('profile-avatar');
-    const payload = { displayName: String(nameInput?.value || '').trim() };
+    
+    // Always include display name from input
+    const displayName = String(nameInput?.value || '').trim();
+    const payload = { displayName: displayName };
+    
+    // Handle avatar upload
     if (avatarInput?.files?.[0]) {
-        payload.avatarData = await readImageAsDataURL(avatarInput.files[0]);
+        try {
+            payload.avatarData = await readImageAsDataURL(avatarInput.files[0]);
+        } catch (err) {
+            if (msg) {
+                msg.style.color = '#ff4d4d';
+                msg.textContent = 'Failed to process image';
+            }
+            return;
+        }
     }
+    
     const response = await fetch(`${API_URL}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -169,9 +183,15 @@ async function saveProfile(e) {
     }
     if (msg) {
         msg.style.color = '#00e676';
-        msg.textContent = 'Profile updated';
+        msg.textContent = 'Profile updated successfully';
     }
+    // Refresh the navbar to show updated profile
     await hydrateNavbarProfile();
+    // Close modal after short delay
+    setTimeout(() => {
+        closeProfileModal();
+        if (msg) msg.textContent = '';
+    }, 1500);
 }
 
 function showLoader(id) {
@@ -365,19 +385,23 @@ async function handleOtpRequest(e) {
         if (response.ok) {
             document.getElementById('otp-request-form').style.display = 'none';
             document.getElementById('otp-verify-form').style.display = 'block';
+            
+            // Show OTP in a browser popup modal instead of terminal
+            if (data.otp) {
+                showOtpPopup(data.otp);
+            }
+            
             const lines = [];
             if (data.delivery === 'email') {
                 lines.push('OTP sent to your email.');
             } else if (data.delivery === 'sms') {
                 lines.push('OTP sent to your mobile number.');
             } else {
-                lines.push('OTP generated. Check server terminal output.');
+                lines.push('OTP generated in browser popup below.');
             }
             if (data.warning) lines.push(`Note: ${data.warning}`);
-            if (data.debugOtp) lines.push(`Dev OTP: ${data.debugOtp}`);
             errorText.style.color = '#00e676';
             errorText.textContent = lines.join(' ');
-            alert(lines.join('\n'));
         } else {
             errorText.style.color = '#ff4d4d';
             errorText.textContent = data.error || 'Failed to send OTP';
@@ -388,6 +412,42 @@ async function handleOtpRequest(e) {
     } finally {
         requestBtn.textContent = 'Send OTP';
         requestBtn.disabled = false;
+    }
+}
+
+// Show OTP in a browser popup modal
+function showOtpPopup(otp) {
+    // Create OTP popup modal if it doesn't exist
+    let popup = document.getElementById('otp-popup-modal');
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'otp-popup-modal';
+        popup.className = 'modal active';
+        popup.innerHTML = `
+            <div class="modal-content glass-panel" style="max-width: 350px; text-align: center;">
+                <h3 style="color: #00e676; margin-bottom: 1rem;">Your OTP</h3>
+                <div style="font-size: 2.5rem; font-weight: 800; letter-spacing: 8px; color: var(--primary); margin: 1.5rem 0; font-family: monospace;" id="otp-display-value"></div>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">Enter this OTP to complete login. It expires in 5 minutes.</p>
+                <button class="cta-btn" onclick="closeOtpPopup()" style="width: 100%;">Got it</button>
+            </div>
+        `;
+        document.body.appendChild(popup);
+    }
+    
+    // Set the OTP value and show the popup
+    const otpDisplay = popup.querySelector('#otp-display-value');
+    if (otpDisplay) {
+        otpDisplay.textContent = otp;
+    }
+    popup.classList.add('active');
+    popup.style.display = 'flex';
+}
+
+function closeOtpPopup() {
+    const popup = document.getElementById('otp-popup-modal');
+    if (popup) {
+        popup.classList.remove('active');
+        popup.style.display = 'none';
     }
 }
 
@@ -566,7 +626,8 @@ if (document.getElementById('update-prediction-form')) {
                 msgEl.style.color = '#00e676';
                 setTimeout(() => {
                     closeModal();
-                    fetchAdminMatches(); // refresh list
+                    // Use local data instead of re-fetching to preserve prediction state
+                    renderAdminMatches(adminMatches);
                 }, 1000);
             } else {
                 const hint =
