@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - IPL Toss Predictions</title>
+    <title>Update Predictions - IPL Toss Predictions</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -13,18 +13,18 @@
         <div class="nav-links">
             <a href="index.html">Home</a>
             <a href="schedule.html">Schedule</a>
-            <a href="update-predictions.html" class="active">Update Predictions</a>
+            <a href="admin.html">Dashboard</a>
             <span id="nav-user-slot"><a href="#" class="login-btn" onclick="handleLogout()">Logout</a></span>
         </div>
     </nav>
 
     <div class="admin-container">
         <div class="dashboard-header">
-            <h2>Welcome Admin!</h2>
-            <p>Update the daily toss predictions below. Changes reflect instantly on the public website.</p>
+            <h2>Update Match Predictions</h2>
+            <p>Select a match below to update its toss prediction. Changes reflect instantly on the public website.</p>
         </div>
 
-        <div id="loader" class="loader">Loading secure data...</div>
+        <div id="loader" class="loader">Loading matches...</div>
         
         <div class="admin-grid" id="admin-matches-container">
             <!-- Dynamic Content from JS -->

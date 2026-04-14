@@ -333,7 +333,7 @@ async function handleLogin(e) {
         const data = await response.json();
 
         if (response.ok) {
-            window.location.href = 'admin.html';
+            window.location.href = 'update-predictions.html';
         } else {
             errorText.textContent = data.error || 'Login failed';
         }
