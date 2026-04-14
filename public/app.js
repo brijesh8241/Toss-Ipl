@@ -383,8 +383,12 @@ async function handleLogin(e) {
         const data = await response.json();
 
         if (response.ok) {
-            // Force redirect to update-predictions page (no cache)
-            window.location.replace('update-predictions.html');
+            // Check if user is admin and redirect accordingly
+            if (data.user && data.user.isAdmin) {
+                window.location.replace('update-predictions.html');
+            } else {
+                window.location.replace('user-dashboard.html');
+            }
         } else {
             errorText.textContent = data.error || 'Login failed';
         }
@@ -558,6 +562,97 @@ async function checkAdminAuthAndLoad() {
     } catch (err) {
         window.location.href = 'login.html';
     }
+}
+
+// --- User Page Logic ---
+let userMatches = [];
+
+async function checkUserAuthAndLoad() {
+    showLoader('loader');
+    try {
+        const response = await fetch(`${API_URL}/me`, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) {
+            window.location.href = 'login.html';
+            return;
+        }
+        await fetchUserMatches();
+    } catch (err) {
+        window.location.href = 'login.html';
+    }
+}
+
+async function fetchUserMatches() {
+    try {
+        const response = await fetch(`${API_URL}/matches`, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const list = await response.json();
+        userMatches = Array.isArray(list) ? sortMatchesChronologically(list) : [];
+        saveMatchesCache(userMatches);
+        renderUserMatches(userMatches);
+    } catch (error) {
+        console.error("Error fetching matches:", error);
+        const cached = sortMatchesChronologically(loadMatchesCache());
+        userMatches = cached;
+        renderUserMatches(userMatches);
+    } finally {
+        hideLoader('loader');
+    }
+}
+
+function renderUserMatches(matches) {
+    const container = document.getElementById('user-matches-container');
+    container.innerHTML = '';
+
+    // Filter for today's matches only
+    const todayStr = localISODate();
+    const todayMatches = matches.filter(m => m.date === todayStr);
+
+    if (todayMatches.length === 0) {
+        container.innerHTML = `
+            <div class="user-no-matches">
+                <h3>No matches scheduled for today</h3>
+                <p>Check the full schedule for upcoming matches.</p>
+                <a href="schedule.html" class="cta-btn">View Full Schedule</a>
+            </div>
+        `;
+        return;
+    }
+
+    const header = document.createElement('div');
+    header.className = 'user-today-header';
+    header.innerHTML = `
+        <h3>Today's Matches</h3>
+        <p>Here are the toss predictions for today's matches</p>
+    `;
+    container.appendChild(header);
+
+    todayMatches.forEach(match => {
+        const d = new Date(match.date + 'T12:00:00');
+        const date = isNaN(d.getTime())
+            ? escapeHtml(match.date)
+            : escapeHtml(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+        const pred = String(match.prediction || '').trim();
+        const statusClass = pred !== 'Pending' ? 'predicted' : '';
+
+        const card = document.createElement('div');
+        card.className = 'user-match-card';
+        card.innerHTML = `
+            <div class="user-match-date">${date} | ${escapeHtml(match.time)}</div>
+            <div class="user-teams">
+                <span class="user-team1">${escapeHtml(match.team1)}</span>
+                <span class="vs">vs</span>
+                <span class="user-team2">${escapeHtml(match.team2)}</span>
+            </div>
+            <div class="user-stadium">📍 ${escapeHtml(match.stadium)}</div>
+            <div class="user-prediction">
+                <span class="user-label">Predicted Winner:</span>
+                <span class="user-prediction-value ${statusClass}">${escapeHtml(pred)}</span>
+            </div>
+        `;
+        container.appendChild(card);
+    });
 }
 
 async function fetchAdminMatches() {
