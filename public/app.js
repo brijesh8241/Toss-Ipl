@@ -101,14 +101,64 @@ function renderNavbarProfile(user) {
         : `<div class="nav-avatar-fallback">${escapeHtml(getInitials(name))}</div>`;
     const adminBadge = user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : '';
     target.innerHTML = `
-        <div class="nav-user-chip" onclick="openProfileModal()">
-            ${avatar}
-            <span class="nav-user-name">${name}</span>
-            ${adminBadge}
+        <div class="nav-user-dropdown">
+            <div class="nav-user-chip" onclick="toggleUserDropdown(event)">
+                ${avatar}
+                <span class="nav-user-name">${name}</span>
+                ${adminBadge}
+                <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+            <div class="nav-dropdown-menu" id="nav-dropdown-menu">
+                <div class="dropdown-header">
+                    ${avatar}
+                    <div class="dropdown-user-info">
+                        <span class="dropdown-user-name">${name}</span>
+                        ${user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : ''}
+                    </div>
+                </div>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" onclick="openProfileModal(); closeUserDropdown();">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    Edit Profile
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item dropdown-logout" onclick="handleLogout()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Logout
+                </button>
+            </div>
         </div>
-        <a href="#" class="login-btn" onclick="handleLogout()">Logout</a>
     `;
 }
+
+function toggleUserDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('nav-dropdown-menu');
+    if (!menu) return;
+    menu.classList.toggle('show');
+}
+
+function closeUserDropdown() {
+    const menu = document.getElementById('nav-dropdown-menu');
+    if (menu) menu.classList.remove('show');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const dropdown = document.querySelector('.nav-user-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+        closeUserDropdown();
+    }
+});
 
 async function hydrateNavbarProfile() {
     const cached = loadUserProfileCache();
