@@ -102,7 +102,7 @@ function renderNavbarProfile(user) {
     const adminBadge = user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : '';
     
     const updatePredictionBtn = user.isAdmin 
-        ? `<a href="admin.html" class="cta-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; margin-right: 1rem; border-radius: 20px; text-decoration: none;">Update Prediction</a>` 
+        ? `<a href="update-predictions.html" class="cta-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; margin-right: 1rem; border-radius: 20px; text-decoration: none;">Update Prediction</a>` 
         : '';
 
     target.innerHTML = `
@@ -679,6 +679,8 @@ async function fetchAdminMatches() {
 
 function renderAdminMatches(matches) {
     const container = document.getElementById('admin-matches-container');
+    if (!container) return;
+    
     container.innerHTML = '';
 
     matches.forEach(match => {
@@ -821,6 +823,50 @@ if (document.getElementById('update-prediction-form')) {
         } finally {
             saveBtn.disabled = false;
             saveBtn.textContent = oldBtnText;
+        }
+    });
+}
+
+if (document.getElementById('add-match-form')) {
+    document.getElementById('add-match-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const date = document.getElementById('add-match-date').value;
+        const time = document.getElementById('add-match-time').value;
+        const team1 = document.getElementById('add-match-t1').value;
+        const team2 = document.getElementById('add-match-t2').value;
+        const stadium = document.getElementById('add-match-stadium').value;
+        const msgEl = document.getElementById('add-match-msg');
+        
+        const btn = e.submitter;
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        msgEl.textContent = '';
+
+        try {
+            const response = await fetch(`${API_URL}/matches`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ date, time, team1, team2, stadium, prediction: 'Pending' })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                msgEl.textContent = 'Match added successfully!';
+                msgEl.style.color = '#00e676';
+                document.getElementById('add-match-form').reset();
+                fetchAdminMatches(); // Refresh the list
+                setTimeout(() => { msgEl.textContent = ''; }, 3000);
+            } else {
+                msgEl.textContent = data.error || 'Failed to add match';
+                msgEl.style.color = '#ff4d4d';
+            }
+        } catch (err) {
+            msgEl.textContent = 'Network error while adding match.';
+            msgEl.style.color = '#ff4d4d';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Add Match';
         }
     });
 }

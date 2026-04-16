@@ -21,7 +21,20 @@
     <div class="admin-container">
         <div class="dashboard-header">
             <h2>Update Match Predictions</h2>
-            <p>Select a match below to update its toss prediction. Changes reflect instantly on the public website.</p>
+            <p>Select a match below to update its toss prediction or add a missing match. Changes reflect instantly on the public website.</p>
+        </div>
+
+        <div class="glass-panel" style="max-width: 100%; margin-bottom: 2rem; padding: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; color: var(--primary);">+ Add New Match</h3>
+            <form id="add-match-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <input type="date" id="add-match-date" required style="padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.4); color: white;">
+                <input type="text" id="add-match-time" placeholder="Time (e.g., 19:30)" required style="padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.4); color: white;">
+                <input type="text" id="add-match-t1" placeholder="Team 1" required style="padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.4); color: white;">
+                <input type="text" id="add-match-t2" placeholder="Team 2" required style="padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.4); color: white;">
+                <input type="text" id="add-match-stadium" placeholder="Stadium" style="padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.4); color: white;">
+                <button type="submit" class="cta-btn" style="padding: 0.8rem; border-radius: 8px;">Add Match</button>
+            </form>
+            <p id="add-match-msg" style="margin-top: 1rem; font-size: 0.9rem;"></p>
         </div>
 
         <div id="loader" class="loader">Loading matches...</div>

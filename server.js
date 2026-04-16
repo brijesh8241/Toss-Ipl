@@ -370,6 +370,37 @@ app.put('/api/matches/:id', authenticate, (req, res) => {
     }
 });
 
+// Add new match
+app.post('/api/matches', authenticate, (req, res) => {
+    try {
+        if (req.user.username !== 'admin') {
+            return res.status(403).json({ error: 'Only admins can add matches' });
+        }
+        const { date, time, team1, team2, stadium, prediction } = req.body;
+        if (!date || !team1 || !team2) {
+            return res.status(400).json({ error: 'Missing required match details' });
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO matches (date, time, team1, team2, stadium, prediction) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        const result = stmt.run(
+            String(date).trim(),
+            String(time || '').trim(),
+            String(team1).trim(),
+            String(team2).trim(),
+            String(stadium || '').trim(),
+            String(prediction || 'Pending').trim()
+        );
+
+        res.json({ success: true, id: result.lastInsertRowid });
+    } catch (err) {
+        console.error('POST /api/matches:', err);
+        res.status(500).json({ error: 'Could not add match' });
+    }
+});
+
 // Me
 app.get('/api/me', authenticate, (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
