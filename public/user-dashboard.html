@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - IPL Toss Predictions</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="schedule.html">Schedule</a>
+            <span id="nav-user-slot"><a href="#" class="login-btn" onclick="handleLogout()">Logout</a></span>
+        </div>
+    </nav>
+
+    <div class="admin-container">
+        <div class="dashboard-header">
+            <h2>Welcome Admin, Brijesh..!</h2>
+            <p>View today's toss predictions and match schedules below.</p>
+        </div>
+
+        <div id="loader" class="loader">Loading your data...</div>
+        
+        <div class="user-grid" id="user-matches-container">
+            <!-- Dynamic Content from JS -->
+        </div>
+
+        <div id="profile-modal" class="modal">
+            <div class="modal-content glass-panel">
+                <span class="close-btn" onclick="closeProfileModal()">&times;</span>
+                <h3>Profile Settings</h3>
+                <form id="profile-form">
+                    <div class="input-group">
+                        <label for="profile-display-name">Display Name</label>
+                        <input type="text" id="profile-display-name" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="profile-avatar">Profile Picture</label>
+                        <input type="file" id="profile-avatar" accept="image/*">
+                    </div>
+                    <button type="submit" class="cta-btn full-width">Save Profile</button>
+                    <p id="profile-msg" class="success-text"></p>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', checkUserAuthAndLoad);
+    </script>
+</body>
+</html>

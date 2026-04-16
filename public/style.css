@@ -79,6 +79,11 @@ body::after {
     color: var(--primary);
 }
 
+.nav-links {
+    display: flex;
+    align-items: center;
+}
+
 .nav-links a {
     color: var(--text-main);
     text-decoration: none;

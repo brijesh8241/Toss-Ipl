@@ -100,7 +100,13 @@ function renderNavbarProfile(user) {
         ? `<img src="${user.avatarData}" alt="${name}" class="nav-avatar-img">`
         : `<div class="nav-avatar-fallback">${escapeHtml(getInitials(name))}</div>`;
     const adminBadge = user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : '';
+    
+    const updatePredictionBtn = user.isAdmin 
+        ? `<a href="update-predictions.html" style="margin: 0; font-weight: 600; color: var(--primary);">Update Prediction</a>` 
+        : '';
+
     target.innerHTML = `
+        ${updatePredictionBtn}
         <div class="nav-user-dropdown">
             <div class="nav-user-chip" onclick="toggleUserDropdown(event)">
                 ${avatar}
