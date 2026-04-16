@@ -102,7 +102,7 @@ function renderNavbarProfile(user) {
     const adminBadge = user.isAdmin ? '<span class="nav-admin-badge">Admin</span>' : '';
     
     const updatePredictionBtn = user.isAdmin 
-        ? `<a href="update-predictions.html" style="margin: 0; font-weight: 600; color: var(--primary);">Update Prediction</a>` 
+        ? `<a href="admin.html" class="cta-btn" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; margin-right: 1rem; border-radius: 20px; text-decoration: none;">Update Prediction</a>` 
         : '';
 
     target.innerHTML = `
@@ -689,6 +689,9 @@ function renderAdminMatches(matches) {
         const pred = String(match.prediction || '').trim();
         const statusClass = pred !== 'Pending' ? 'predicted' : '';
 
+        const options = ['Pending', match.team1, match.team2];
+        const selectOptions = options.map(opt => `<option value="${escapeHtml(opt)}" ${pred === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('');
+
         const row = document.createElement('div');
         row.className = 'admin-match-row';
         row.innerHTML = `
@@ -696,42 +699,66 @@ function renderAdminMatches(matches) {
                 <h4>${escapeHtml(match.team1)} vs ${escapeHtml(match.team2)}</h4>
                 <p>${date} | ${escapeHtml(match.time)} | 📍 ${escapeHtml(match.stadium)}</p>
             </div>
-            <div class="admin-match-status">
-                <span class="${statusClass}">${escapeHtml(pred)}</span>
+            <div class="admin-match-status" style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; position: relative;">
+                <select id="pred-select-${match.id}" style="padding: 0.4rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.4); color: white; margin-bottom: 0.3rem;">
+                    ${selectOptions}
+                </select>
+                <div id="msg-${match.id}" class="success-text" style="font-size: 0.75rem; margin-top: 0; min-height: 15px;"></div>
             </div>
-            <button class="edit-btn" onclick="openUpdateModal(${match.id})">Update</button>
+            <button class="edit-btn" onclick="saveInlinePrediction(${match.id})" style="margin-left: 1rem;">Save</button>
         `;
         container.appendChild(row);
     });
 }
 
-function openUpdateModal(id) {
-    const match = adminMatches.find(m => String(m.id) === String(id));
-    if (!match) return;
+async function saveInlinePrediction(id) {
+    const select = document.getElementById(`pred-select-${id}`);
+    const prediction = select.value;
+    const msgEl = document.getElementById(`msg-${id}`);
+    
+    // reset message
+    msgEl.textContent = 'Saving...';
+    msgEl.style.color = 'var(--text-muted)';
 
-    document.getElementById('match-id').value = id;
-    document.getElementById('modal-match-details').textContent = `${match.team1} vs ${match.team2}`;
+    try {
+        const response = await fetch(`${API_URL}/matches/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store',
+            body: JSON.stringify({ prediction })
+        });
+        
+        let data = {};
+        const raw = await response.text();
+        if (raw) {
+            try { data = JSON.parse(raw); } catch(_) { data = { error: 'Bad response from server' }; }
+        }
 
-    const select = document.getElementById('prediction-select');
-    const pred = String(match.prediction || '').trim();
-    const t1 = String(match.team1 || '').trim();
-    const t2 = String(match.team2 || '').trim();
-    const options = ['Pending', t1, t2];
-    select.innerHTML = '';
-    options.forEach((value) => {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = value;
-        if (pred === value) opt.selected = true;
-        select.appendChild(opt);
-    });
-
-    document.getElementById('modal-msg').textContent = '';
-    document.getElementById('update-modal').classList.add('active');
+        if (response.ok) {
+            adminMatches = adminMatches.map(m => String(m.id) === String(id) ? { ...m, prediction } : m);
+            saveMatchesCache(adminMatches);
+            msgEl.textContent = 'Updated!';
+            msgEl.style.color = '#00e676';
+            setTimeout(() => { msgEl.textContent = ''; }, 2000);
+        } else {
+            msgEl.textContent = data.error || 'Failed';
+            msgEl.style.color = '#ff4d4d';
+            setTimeout(() => { msgEl.textContent = ''; }, 3000);
+        }
+    } catch (err) {
+        msgEl.textContent = 'Network error';
+        msgEl.style.color = '#ff4d4d';
+        setTimeout(() => { msgEl.textContent = ''; }, 3000);
+    }
 }
 
+// Keep the form listener around just in case the modal is open somewhere, but it's largely deprecated
+function openUpdateModal(id) {
+    // Deprecated. Inline editing is now used.
+}
 function closeModal() {
-    document.getElementById('update-modal').classList.remove('active');
+    // Deprecated. Inline editing is now used.
 }
 
 if (document.getElementById('update-prediction-form')) {
