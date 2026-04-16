@@ -389,12 +389,8 @@ async function handleLogin(e) {
         const data = await response.json();
 
         if (response.ok) {
-            // Check if user is admin and redirect accordingly
-            if (data.user && data.user.isAdmin) {
-                window.location.replace('update-predictions.html');
-            } else {
-                window.location.replace('user-dashboard.html');
-            }
+            // Redirect everyone to the home page; navbar will update dynamically based on role
+            window.location.replace('index.html');
         } else {
             errorText.textContent = data.error || 'Login failed';
         }
