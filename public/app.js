@@ -716,6 +716,10 @@ async function saveInlinePrediction(id) {
     const prediction = select.value;
     const msgEl = document.getElementById(`msg-${id}`);
     
+    // Optimistic local update: saves locally immediately so it's not lost if server is down
+    adminMatches = adminMatches.map(m => String(m.id) === String(id) ? { ...m, prediction } : m);
+    saveMatchesCache(adminMatches);
+
     // reset message
     msgEl.textContent = 'Saving...';
     msgEl.style.color = 'var(--text-muted)';
@@ -736,19 +740,18 @@ async function saveInlinePrediction(id) {
         }
 
         if (response.ok) {
-            adminMatches = adminMatches.map(m => String(m.id) === String(id) ? { ...m, prediction } : m);
-            saveMatchesCache(adminMatches);
             msgEl.textContent = 'Updated!';
             msgEl.style.color = '#00e676';
             setTimeout(() => { msgEl.textContent = ''; }, 2000);
         } else {
-            msgEl.textContent = data.error || 'Failed';
-            msgEl.style.color = '#ff4d4d';
+            // Revert on explicit failure? No, user requested persistence even on failure/down
+            msgEl.textContent = 'Saved Locally (Server ' + response.status + ')';
+            msgEl.style.color = '#ffd700'; // yellow for offline sync notice
             setTimeout(() => { msgEl.textContent = ''; }, 3000);
         }
     } catch (err) {
-        msgEl.textContent = 'Network error';
-        msgEl.style.color = '#ff4d4d';
+        msgEl.textContent = 'Saved Locally (Server Offline)';
+        msgEl.style.color = '#ffd700';
         setTimeout(() => { msgEl.textContent = ''; }, 3000);
     }
 }
