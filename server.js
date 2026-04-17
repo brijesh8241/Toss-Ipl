@@ -33,6 +33,29 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Initialize fixtures sync
 ensureFixturesSynced(db);
 
+// Ensure Admin User Exists (Self-Healing)
+async function ensureAdminExists() {
+    try {
+        const { data: user, error } = await db
+            .from('users')
+            .select('*')
+            .eq('username', 'admin')
+            .single();
+
+        if (error && error.code === 'PGRST116') { // Not found
+            console.log('💡 Seeding default admin user...');
+            await db.from('users').insert({ 
+                username: 'admin', 
+                password: 'password123', 
+                display_name: 'Admin' 
+            });
+        }
+    } catch (err) {
+        console.error('Error ensuring admin user:', err.message);
+    }
+}
+ensureAdminExists();
+
 setImmediate(() => {
     // Venue geocoding logic (unchanged architecture)
     refreshVenueGeocodesIfConfigured(db).catch((err) => {
@@ -224,7 +247,7 @@ app.post('/api/login', async (req, res) => {
         .single();
 
     if (error || !user) {
-        console.warn(`❌ Failed login attempt for username: ${username}`);
+        console.warn(`❌ Failed login attempt for username: ${username}. Error: ${error ? error.message : 'User not found'}`);
         return res.status(401).json({ error: "Invalid credentials" });
     }
 
