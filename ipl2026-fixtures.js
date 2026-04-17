@@ -1,7 +1,5 @@
 /**
- * IPL 2026 league stage (70 matches). Team codes and dates align with
- * published fixtures (e.g. Wisden / BCCI schedule). Stadium names are
- * full venue labels suitable for Google Maps search.
+ * IPL 2026 league stage (70 matches). 
  */
 
 const VENUE_STADIUM = {
@@ -24,7 +22,6 @@ function stadiumFor(city) {
     return VENUE_STADIUM[city] || city;
 }
 
-// Each row: [isoDate, timeWithoutIST, team1, team2, venueCity, is1530?]
 const rows = [
     ['2026-03-28', 'RCB', 'SRH', 'Bengaluru', false],
     ['2026-03-29', 'MI', 'KKR', 'Mumbai', false],
@@ -104,28 +101,33 @@ function buildFixtures() {
         time: afternoon ? '3:30 PM IST' : '7:30 PM IST',
         team1: t1,
         team2: t2,
-        stadium: stadiumFor(city)
+        stadium: stadiumFor(city),
+        prediction: 'Pending'
     }));
 }
 
 /**
- * Insert any official fixture rows missing from DB. Never updates
- * prediction or changes existing rows (stable until admin edits).
+ * Insert any official fixture rows missing from Supabase. 
+ * Uses upsert with onConflict to avoid duplicates and preserve 
+ * existing predictions.
  */
-function ensureFixturesSynced(db) {
+async function ensureFixturesSynced(db) {
     const fixtures = buildFixtures();
-    const insert = db.prepare(
-        `INSERT OR IGNORE INTO matches (date, time, team1, team2, stadium, prediction)
-         VALUES (?, ?, ?, ?, ?, ?)`
-    );
+    
+    // We use onConflict on (date, team1, team2) which matches our unique index.
+    // We DO NOT update 'prediction' if it already exists in the destination to avoid overwriting.
+    const { error } = await db
+        .from('matches')
+        .upsert(fixtures, { 
+            onConflict: 'date,team1,team2',
+            ignoreDuplicates: true 
+        });
 
-    const insertMany = db.transaction((list) => {
-        for (const f of list) {
-            insert.run(f.date, f.time, f.team1, f.team2, f.stadium, 'Pending');
-        }
-    });
-
-    insertMany(fixtures);
+    if (error) {
+        console.error('❌ Error syncing fixtures to Supabase:', error.message);
+    } else {
+        console.log('✅ Fixtures synced with Supabase');
+    }
 }
 
 module.exports = { buildFixtures, ensureFixturesSynced, VENUE_STADIUM };

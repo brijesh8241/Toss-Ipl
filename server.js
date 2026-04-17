@@ -1,16 +1,17 @@
+require('dotenv').config();
 const express = require('express');
-const Database = require('better-sqlite3');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const db = require('./db');
 const { ensureFixturesSynced } = require('./ipl2026-fixtures');
 const { refreshVenueGeocodesIfConfigured, attachGeocodes } = require('./venueGeocode');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = "ipl2026_super_secret_key";
+const SECRET_KEY = process.env.SECRET_KEY || "ipl2026_super_secret_key";
 
-// Middleware — never use Access-Control-Allow-Origin: * with credentials (breaks admin PUT in many browsers)
+// Middleware
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin) {
@@ -29,111 +30,17 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Database (SYNC - better-sqlite3)
-const db = new Database('./prediction.db');
-db.pragma('journal_mode = WAL');
-
-// Create tables
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    display_name TEXT,
-    avatar_data TEXT
-);
-
-CREATE TABLE IF NOT EXISTS matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT,
-    time TEXT,
-    team1 TEXT,
-    team2 TEXT,
-    stadium TEXT,
-    prediction TEXT
-);
-
-CREATE TABLE IF NOT EXISTS prediction_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    match_id INTEGER NOT NULL,
-    match_date TEXT,
-    team1 TEXT,
-    team2 TEXT,
-    stadium TEXT,
-    old_prediction TEXT,
-    new_prediction TEXT,
-    changed_by TEXT,
-    changed_at TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (match_id) REFERENCES matches(id)
-);
-`);
-
-function ensureUserColumns() {
-    const columns = db.prepare(`PRAGMA table_info(users)`).all().map((c) => c.name);
-    if (!columns.includes('display_name')) {
-        db.exec(`ALTER TABLE users ADD COLUMN display_name TEXT`);
-    }
-    if (!columns.includes('avatar_data')) {
-        db.exec(`ALTER TABLE users ADD COLUMN avatar_data TEXT`);
-    }
-}
-
-ensureUserColumns();
-
-// If duplicates already exist (from earlier seeds), keep the best one.
-// Priority: non-Pending prediction > lowest id.
-db.transaction(() => {
-    const dups = db.prepare(`
-        SELECT date, team1, team2, COUNT(*) as c
-        FROM matches
-        GROUP BY date, team1, team2
-        HAVING c > 1
-    `).all();
-
-    const pick = db.prepare(`
-        SELECT id, prediction
-        FROM matches
-        WHERE date = ? AND team1 = ? AND team2 = ?
-        ORDER BY (prediction <> 'Pending') DESC, id ASC
-        LIMIT 1
-    `);
-    const ids = db.prepare(`
-        SELECT id FROM matches
-        WHERE date = ? AND team1 = ? AND team2 = ?
-    `);
-    const del = db.prepare(`DELETE FROM matches WHERE id = ?`);
-
-    for (const g of dups) {
-        const keep = pick.get(g.date, g.team1, g.team2);
-        const allIds = ids.all(g.date, g.team1, g.team2);
-        for (const row of allIds) {
-            if (row.id !== keep.id) del.run(row.id);
-        }
-    }
-})();
-
-// Prevent duplicate rows for the same fixture (after cleanup).
-db.exec(`
-CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_unique
-ON matches(date, team1, team2);
-`);
-
+// Initialize fixtures sync
 ensureFixturesSynced(db);
 
 setImmediate(() => {
+    // Venue geocoding logic (unchanged architecture)
     refreshVenueGeocodesIfConfigured(db).catch((err) => {
         console.warn('Google Geocoding (optional):', err.message || err);
     });
 });
 
-// Seed users
-const userCount = db.prepare(`SELECT COUNT(*) as count FROM users`).get();
-if (userCount.count === 0) {
-    db.prepare(`INSERT INTO users (username, password) VALUES (?, ?)`)
-        .run('admin', 'password123');
-}
-
-// OTP store
+// OTP store (in-memory is fine for now, or could move to Supabase)
 const otpStore = {};
 
 function isEmail(value) {
@@ -152,6 +59,7 @@ function normalizeIdentifier(value) {
     return raw;
 }
 
+// ... sendOtpEmail / sendOtpSms logic remains same (uses fetch) ...
 async function sendOtpEmail(to, otp) {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.OTP_FROM_EMAIL;
@@ -232,15 +140,12 @@ app.post('/api/request-otp', async (req, res) => {
         avatarData: String(avatarData || '').slice(0, 2_000_000) || null
     };
 
-    // Terminal fallback is always available for local development.
-    const terminalLine = `OTP for ${normalized}: ${otp} (valid 5 minutes)`;
     console.log('='.repeat(50));
-    console.log(terminalLine);
+    console.log(`OTP for ${normalized}: ${otp} (valid 5 minutes)`);
     console.log('='.repeat(50));
 
     const respond = (payload = {}) => {
         const out = { success: true, ...payload };
-        // Always return OTP so it can be shown in browser popup
         out.otp = otp;
         return res.json(out);
     };
@@ -266,7 +171,7 @@ app.post('/api/request-otp', async (req, res) => {
 });
 
 // Verify OTP
-app.post('/api/verify-otp', (req, res) => {
+app.post('/api/verify-otp', async (req, res) => {
     const { identifier, otp } = req.body;
     const normalized = normalizeIdentifier(identifier);
     const data = otpStore[normalized];
@@ -276,28 +181,24 @@ app.post('/api/verify-otp', (req, res) => {
 
     delete otpStore[normalized];
 
-    db.prepare(`
-        INSERT OR IGNORE INTO users (username, display_name, avatar_data)
-        VALUES (?, ?, ?)
-    `).run(normalized, data.displayName || normalized, data.avatarData || null);
+    // Upsert user in Supabase
+    const { data: user, error } = await db
+        .from('users')
+        .upsert({ 
+            username: normalized, 
+            display_name: data.displayName || normalized, 
+            avatar_data: data.avatarData || null 
+        }, { onConflict: 'username' })
+        .select()
+        .single();
 
-    if (data.displayName || data.avatarData) {
-        db.prepare(`
-            UPDATE users
-            SET
-                display_name = COALESCE(?, display_name),
-                avatar_data = COALESCE(?, avatar_data)
-            WHERE username = ?
-        `).run(data.displayName || null, data.avatarData || null, normalized);
+    if (error) {
+        console.error('Verify OTP error:', error);
+        return res.status(500).json({ error: 'Failed to create/update user' });
     }
 
-    const user = db.prepare(`SELECT id, username FROM users WHERE username = ?`)
-        .get(normalized);
-
     const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
-
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
-
     res.json({ success: true });
 });
 
@@ -306,24 +207,26 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// Login
-app.post('/api/login', (req, res) => {
+// Login (Password-based for Admin)
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
-    const user = db.prepare(`SELECT * FROM users WHERE username = ? AND password = ?`)
-        .get(username, password);
+    const { data: user, error } = await db
+        .from('users')
+        .select('*')
+        .eq('username', username)
+        .eq('password', password)
+        .single();
 
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (error || !user) return res.status(401).json({ error: "Invalid credentials" });
 
     const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
-
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
-
     res.json({ success: true });
 });
 
 // Auth middleware
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
@@ -335,14 +238,18 @@ function authenticate(req, res, next) {
     }
 }
 
-// Get matches (re-sync official fixtures first so the schedule always stays complete)
-app.get('/api/matches', (req, res) => {
+// Get matches
+app.get('/api/matches', async (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     try {
-        ensureFixturesSynced(db);
-        const matches = db.prepare(
-            `SELECT * FROM matches ORDER BY date ASC, time ASC, id ASC`
-        ).all();
+        await ensureFixturesSynced(db);
+        const { data: matches, error } = await db
+            .from('matches')
+            .select('*')
+            .order('date', { ascending: true })
+            .order('time', { ascending: true });
+
+        if (error) throw error;
         res.json(attachGeocodes(matches));
     } catch (err) {
         console.error('GET /api/matches:', err);
@@ -351,41 +258,41 @@ app.get('/api/matches', (req, res) => {
 });
 
 // Update match
-app.put('/api/matches/:id', authenticate, (req, res) => {
+app.put('/api/matches/:id', authenticate, async (req, res) => {
     try {
         const { prediction } = req.body || {};
         const id = parseInt(req.params.id, 10);
-        if (!Number.isFinite(id)) {
-            return res.status(400).json({ error: 'Invalid match id' });
-        }
         if (prediction === undefined || prediction === null || String(prediction).trim() === '') {
             return res.status(400).json({ error: 'Missing prediction' });
         }
 
-        const match = db.prepare(`SELECT * FROM matches WHERE id = ?`).get(id);
-        if (!match) {
-            return res.status(404).json({ error: 'Match not found' });
-        }
+        const { data: match, error: fetchErr } = await db
+            .from('matches')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (fetchErr || !match) return res.status(404).json({ error: 'Match not found' });
 
         const value = String(prediction).trim();
-        const t1 = String(match.team1).trim();
-        const t2 = String(match.team2).trim();
-        const allowed = new Set(['Pending', t1, t2]);
-        if (!allowed.has(value)) {
-            return res.status(400).json({ error: 'Invalid prediction value' });
-        }
-
         const oldPrediction = String(match.prediction || 'Pending').trim();
 
-        // Log prediction change to history (only if the value actually changed)
         if (oldPrediction !== value) {
-            db.prepare(`
-                INSERT INTO prediction_history (match_id, match_date, team1, team2, stadium, old_prediction, new_prediction, changed_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(id, match.date, match.team1, match.team2, match.stadium || '', oldPrediction, value, req.user.username);
-        }
+            // Log history
+            await db.from('prediction_history').insert({
+                match_id: id,
+                match_date: match.date,
+                team1: match.team1,
+                team2: match.team2,
+                stadium: match.stadium || '',
+                old_prediction: oldPrediction,
+                new_prediction: value,
+                changed_by: req.user.username
+            });
 
-        db.prepare(`UPDATE matches SET prediction = ? WHERE id = ?`).run(value, id);
+            // Update match
+            await db.from('matches').update({ prediction: value }).eq('id', id);
+        }
 
         res.json({ success: true });
     } catch (err) {
@@ -395,7 +302,7 @@ app.put('/api/matches/:id', authenticate, (req, res) => {
 });
 
 // Add new match
-app.post('/api/matches', authenticate, (req, res) => {
+app.post('/api/matches', authenticate, async (req, res) => {
     try {
         if (req.user.username !== 'admin') {
             return res.status(403).json({ error: 'Only admins can add matches' });
@@ -405,65 +312,75 @@ app.post('/api/matches', authenticate, (req, res) => {
             return res.status(400).json({ error: 'Missing required match details' });
         }
 
-        const stmt = db.prepare(`
-            INSERT INTO matches (date, time, team1, team2, stadium, prediction) 
-            VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        const result = stmt.run(
-            String(date).trim(),
-            String(time || '').trim(),
-            String(team1).trim(),
-            String(team2).trim(),
-            String(stadium || '').trim(),
-            String(prediction || 'Pending').trim()
-        );
+        const { data, error } = await db
+            .from('matches')
+            .insert({
+                date: String(date).trim(),
+                time: String(time || '').trim(),
+                team1: String(team1).trim(),
+                team2: String(team2).trim(),
+                stadium: String(stadium || '').trim(),
+                prediction: String(prediction || 'Pending').trim()
+            })
+            .select()
+            .single();
 
-        res.json({ success: true, id: result.lastInsertRowid });
+        if (error) throw error;
+        res.json({ success: true, id: data.id });
     } catch (err) {
         console.error('POST /api/matches:', err);
         res.status(500).json({ error: 'Could not add match' });
     }
 });
 
-// Prediction History endpoint (admin-only)
-app.get('/api/prediction-history', authenticate, (req, res) => {
-    if (req.user.username !== 'admin') {
-        return res.status(403).json({ error: 'Admin access only' });
-    }
+// History endpoint
+app.get('/api/prediction-history', authenticate, async (req, res) => {
+    if (req.user.username !== 'admin') return res.status(403).json({ error: 'Admin access only' });
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     try {
-        const rows = db.prepare(`
-            SELECT * FROM prediction_history
-            ORDER BY changed_at DESC
-        `).all();
-        res.json(rows);
+        const { data, error } = await db
+            .from('prediction_history')
+            .select('*')
+            .order('changed_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
     } catch (err) {
         console.error('GET /api/prediction-history:', err);
-        res.status(500).json({ error: 'Failed to load prediction history' });
+        res.status(500).json({ error: 'Failed to load history' });
     }
 });
 
-// Prediction History Stats endpoint (admin-only)
-app.get('/api/prediction-stats', authenticate, (req, res) => {
-    if (req.user.username !== 'admin') {
-        return res.status(403).json({ error: 'Admin access only' });
-    }
+// Stats endpoint
+app.get('/api/prediction-stats', authenticate, async (req, res) => {
+    if (req.user.username !== 'admin') return res.status(403).json({ error: 'Admin access only' });
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     try {
-        const totalChanges = db.prepare(`SELECT COUNT(*) as count FROM prediction_history`).get().count;
-        const uniqueMatches = db.prepare(`SELECT COUNT(DISTINCT match_id) as count FROM prediction_history`).get().count;
-        const latestChange = db.prepare(`SELECT changed_at FROM prediction_history ORDER BY changed_at DESC LIMIT 1`).get();
-        const mostChanged = db.prepare(`
-            SELECT team1, team2, match_date, COUNT(*) as changes
-            FROM prediction_history
-            GROUP BY match_id
-            ORDER BY changes DESC
-            LIMIT 1
-        `).get();
+        // We do separate queries for stats as Supabase doesn't support complex aggregations in a single simple call easily
+        const { count: totalChanges } = await db.from('prediction_history').select('*', { count: 'exact', head: true });
+        const { data: uniqueMatchesRaw } = await db.from('prediction_history').select('match_id');
+        const uniqueMatches = new Set(uniqueMatchesRaw.map(m => m.match_id)).size;
+        
+        const { data: latestRaw } = await db.from('prediction_history').select('changed_at').order('changed_at', { ascending: false }).limit(1).single();
+        
+        const { data: history } = await db.from('prediction_history').select('match_id, team1, team2, match_date');
+        const counts = {};
+        let mostChanged = null;
+        let maxCount = 0;
+        
+        history.forEach(h => {
+            const key = h.match_id;
+            counts[key] = (counts[key] || 0) + 1;
+            if (counts[key] > maxCount) {
+                maxCount = counts[key];
+                mostChanged = { team1: h.team1, team2: h.team2, match_date: h.match_date };
+            }
+        });
+
         res.json({
-            totalChanges,
-            uniqueMatches,
-            lastUpdated: latestChange ? latestChange.changed_at : null,
+            totalChanges: totalChanges || 0,
+            uniqueMatches: uniqueMatches || 0,
+            lastUpdated: latestRaw ? latestRaw.changed_at : null,
             mostChanged: mostChanged || null
         });
     } catch (err) {
@@ -473,14 +390,15 @@ app.get('/api/prediction-stats', authenticate, (req, res) => {
 });
 
 // Me
-app.get('/api/me', authenticate, (req, res) => {
+app.get('/api/me', authenticate, async (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    const u = db.prepare(`
-        SELECT id, username, display_name, avatar_data
-        FROM users
-        WHERE id = ?
-    `).get(req.user.id);
-    if (!u) return res.status(404).json({ error: 'User not found' });
+    const { data: u, error } = await db
+        .from('users')
+        .select('id, username, display_name, avatar_data')
+        .eq('id', req.user.id)
+        .single();
+
+    if (error || !u) return res.status(404).json({ error: 'User not found' });
     res.json({
         user: {
             id: u.id,
@@ -492,19 +410,23 @@ app.get('/api/me', authenticate, (req, res) => {
     });
 });
 
-app.put('/api/profile', authenticate, (req, res) => {
+// Update Profile
+app.put('/api/profile', authenticate, async (req, res) => {
     const displayName = String(req.body?.displayName || '').trim();
     const avatarData = req.body?.avatarData ? String(req.body.avatarData).slice(0, 2_000_000) : null;
-    if (!displayName && !avatarData) {
-        return res.status(400).json({ error: 'No profile update provided' });
-    }
-    db.prepare(`
-        UPDATE users
-        SET
-            display_name = CASE WHEN ? <> '' THEN ? ELSE display_name END,
-            avatar_data = COALESCE(?, avatar_data)
-        WHERE id = ?
-    `).run(displayName, displayName, avatarData, req.user.id);
+    
+    const updateData = {};
+    if (displayName) updateData.display_name = displayName;
+    if (avatarData) updateData.avatar_data = avatarData;
+
+    if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'No profile update provided' });
+
+    const { error } = await db
+        .from('users')
+        .update(updateData)
+        .eq('id', req.user.id);
+
+    if (error) return res.status(500).json({ error: 'Profile update failed' });
     res.json({ success: true });
 });
 
