@@ -20,26 +20,46 @@ async function refreshVenueGeocodesIfConfigured(db) {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) return;
 
-    const cache = loadGeocodeCache();
-    const rows = db.prepare('SELECT DISTINCT stadium FROM matches').all();
-    let changed = false;
+    try {
+        const cache = loadGeocodeCache();
+        
+        // Fetch distinct stadiums from Supabase
+        const { data: rows, error } = await db
+            .from('matches')
+            .select('stadium');
 
-    for (const { stadium } of rows) {
-        if (!stadium || cache[stadium]) continue;
-        const url =
-            'https://maps.googleapis.com/maps/api/geocode/json?' +
-            new URLSearchParams({ address: stadium, key: apiKey }).toString();
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.status === 'OK' && data.results && data.results[0]) {
-            const loc = data.results[0].geometry.location;
-            cache[stadium] = { lat: loc.lat, lng: loc.lng, formatted: data.results[0].formatted_address };
-            changed = true;
+        if (error) throw error;
+
+        // Get unique stadiums
+        const stadiums = [...new Set(rows.map(r => r.stadium).filter(Boolean))];
+        let changed = false;
+
+        for (const stadium of stadiums) {
+            if (cache[stadium]) continue;
+            
+            const url =
+                'https://maps.googleapis.com/maps/api/geocode/json?' +
+                new URLSearchParams({ address: stadium, key: apiKey }).toString();
+            
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if (data.status === 'OK' && data.results && data.results[0]) {
+                const loc = data.results[0].geometry.location;
+                cache[stadium] = { 
+                    lat: loc.lat, 
+                    lng: loc.lng, 
+                    formatted: data.results[0].formatted_address 
+                };
+                changed = true;
+            }
         }
-    }
 
-    if (changed) {
-        fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2), 'utf8');
+        if (changed) {
+            fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2), 'utf8');
+        }
+    } catch (err) {
+        console.error('Error in refreshVenueGeocodes:', err.message);
     }
 }
 
