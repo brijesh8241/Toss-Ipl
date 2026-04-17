@@ -209,7 +209,12 @@ app.post('/api/logout', (req, res) => {
 
 // Login (Password-based for Admin)
 app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+
+    if (!username || !password) {
+        return res.status(400).json({ error: "Username and password are required" });
+    }
 
     const { data: user, error } = await db
         .from('users')
@@ -218,7 +223,15 @@ app.post('/api/login', async (req, res) => {
         .eq('password', password)
         .single();
 
-    if (error || !user) return res.status(401).json({ error: "Invalid credentials" });
+    if (error || !user) {
+        console.warn(`❌ Failed login attempt for username: ${username}`);
+        return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
+    res.json({ success: true });
+});
 
     const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
