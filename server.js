@@ -233,11 +233,6 @@ app.post('/api/login', async (req, res) => {
     res.json({ success: true });
 });
 
-    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1d' });
-    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', path: '/' });
-    res.json({ success: true });
-});
-
 // Auth middleware
 async function authenticate(req, res, next) {
     const token = req.cookies.token;
