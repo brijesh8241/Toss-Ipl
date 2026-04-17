@@ -52,6 +52,20 @@ CREATE TABLE IF NOT EXISTS matches (
     stadium TEXT,
     prediction TEXT
 );
+
+CREATE TABLE IF NOT EXISTS prediction_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id INTEGER NOT NULL,
+    match_date TEXT,
+    team1 TEXT,
+    team2 TEXT,
+    stadium TEXT,
+    old_prediction TEXT,
+    new_prediction TEXT,
+    changed_by TEXT,
+    changed_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (match_id) REFERENCES matches(id)
+);
 `);
 
 function ensureUserColumns() {
@@ -348,7 +362,7 @@ app.put('/api/matches/:id', authenticate, (req, res) => {
             return res.status(400).json({ error: 'Missing prediction' });
         }
 
-        const match = db.prepare(`SELECT team1, team2 FROM matches WHERE id = ?`).get(id);
+        const match = db.prepare(`SELECT * FROM matches WHERE id = ?`).get(id);
         if (!match) {
             return res.status(404).json({ error: 'Match not found' });
         }
@@ -359,6 +373,16 @@ app.put('/api/matches/:id', authenticate, (req, res) => {
         const allowed = new Set(['Pending', t1, t2]);
         if (!allowed.has(value)) {
             return res.status(400).json({ error: 'Invalid prediction value' });
+        }
+
+        const oldPrediction = String(match.prediction || 'Pending').trim();
+
+        // Log prediction change to history (only if the value actually changed)
+        if (oldPrediction !== value) {
+            db.prepare(`
+                INSERT INTO prediction_history (match_id, match_date, team1, team2, stadium, old_prediction, new_prediction, changed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(id, match.date, match.team1, match.team2, match.stadium || '', oldPrediction, value, req.user.username);
         }
 
         db.prepare(`UPDATE matches SET prediction = ? WHERE id = ?`).run(value, id);
@@ -398,6 +422,53 @@ app.post('/api/matches', authenticate, (req, res) => {
     } catch (err) {
         console.error('POST /api/matches:', err);
         res.status(500).json({ error: 'Could not add match' });
+    }
+});
+
+// Prediction History endpoint (admin-only)
+app.get('/api/prediction-history', authenticate, (req, res) => {
+    if (req.user.username !== 'admin') {
+        return res.status(403).json({ error: 'Admin access only' });
+    }
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    try {
+        const rows = db.prepare(`
+            SELECT * FROM prediction_history
+            ORDER BY changed_at DESC
+        `).all();
+        res.json(rows);
+    } catch (err) {
+        console.error('GET /api/prediction-history:', err);
+        res.status(500).json({ error: 'Failed to load prediction history' });
+    }
+});
+
+// Prediction History Stats endpoint (admin-only)
+app.get('/api/prediction-stats', authenticate, (req, res) => {
+    if (req.user.username !== 'admin') {
+        return res.status(403).json({ error: 'Admin access only' });
+    }
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    try {
+        const totalChanges = db.prepare(`SELECT COUNT(*) as count FROM prediction_history`).get().count;
+        const uniqueMatches = db.prepare(`SELECT COUNT(DISTINCT match_id) as count FROM prediction_history`).get().count;
+        const latestChange = db.prepare(`SELECT changed_at FROM prediction_history ORDER BY changed_at DESC LIMIT 1`).get();
+        const mostChanged = db.prepare(`
+            SELECT team1, team2, match_date, COUNT(*) as changes
+            FROM prediction_history
+            GROUP BY match_id
+            ORDER BY changes DESC
+            LIMIT 1
+        `).get();
+        res.json({
+            totalChanges,
+            uniqueMatches,
+            lastUpdated: latestChange ? latestChange.changed_at : null,
+            mostChanged: mostChanged || null
+        });
+    } catch (err) {
+        console.error('GET /api/prediction-stats:', err);
+        res.status(500).json({ error: 'Failed to load stats' });
     }
 });
 

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prediction History - IPL Toss Predictions 2026</title>
+    <meta name="description" content="View the complete history of all IPL 2026 toss prediction changes with timestamps and details.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="logo">🏏 IPL <span>TOSS PRED</span> '26</div>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="schedule.html">Schedule</a>
+            <a href="history.html" class="active">History</a>
+            <a href="update-predictions.html">Update Predictions</a>
+            <span id="nav-user-slot"><a href="#" class="login-btn" onclick="handleLogout()">Logout</a></span>
+        </div>
+    </nav>
+
+    <section class="history-section">
+        <div class="history-header">
+            <h1>Prediction <span class="gradient-text" style="font-size: inherit;">History</span></h1>
+            <p>Every prediction change, logged forever. Track how predictions evolved over the season.</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="history-stats" id="history-stats">
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-value" id="stat-total">—</div>
+                <div class="stat-label">Total Changes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🏏</div>
+                <div class="stat-value" id="stat-matches">—</div>
+                <div class="stat-label">Matches Updated</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🕐</div>
+                <div class="stat-value" id="stat-latest">—</div>
+                <div class="stat-label">Last Update</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔥</div>
+                <div class="stat-value" id="stat-most-changed">—</div>
+                <div class="stat-label">Most Changed</div>
+            </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="history-filter">
+            <label for="history-date-filter">Filter by match date:</label>
+            <select id="history-date-filter">
+                <option value="all">All Dates</option>
+            </select>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loader" class="loader">Loading history...</div>
+
+        <!-- Timeline -->
+        <div class="history-timeline" id="history-timeline">
+            <!-- Dynamic Content -->
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 IPL Toss Predictions. All rights reserved.</p>
+    </footer>
+
+    <div id="profile-modal" class="modal">
+        <div class="modal-content glass-panel">
+            <span class="close-btn" onclick="closeProfileModal()">&times;</span>
+            <h3>Profile Settings</h3>
+            <form id="profile-form">
+                <div class="input-group">
+                    <label for="profile-display-name">Display Name</label>
+                    <input type="text" id="profile-display-name" required>
+                </div>
+                <div class="input-group">
+                    <label for="profile-avatar">Profile Picture</label>
+                    <input type="file" id="profile-avatar" accept="image/*">
+                </div>
+                <button type="submit" class="cta-btn full-width">Save Profile</button>
+                <p id="profile-msg" class="success-text"></p>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        async function checkAdminAndLoadHistory() {
+            try {
+                const meRes = await fetch('/api/me', { credentials: 'include', cache: 'no-store' });
+                if (!meRes.ok) { window.location.href = 'login.html'; return; }
+                const meData = await meRes.json();
+                if (!meData.user || !meData.user.isAdmin) { window.location.href = 'index.html'; return; }
+            } catch (_) { window.location.href = 'login.html'; return; }
+            await loadHistory();
+        }
+
+        async function loadHistory() {
+            showLoader('loader');
+            try {
+                // Fetch stats and history in parallel
+                const [statsRes, historyRes] = await Promise.all([
+                    fetch('/api/prediction-stats', { credentials: 'include', cache: 'no-store' }),
+                    fetch('/api/prediction-history', { credentials: 'include', cache: 'no-store' })
+                ]);
+
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    document.getElementById('stat-total').textContent = stats.totalChanges || 0;
+                    document.getElementById('stat-matches').textContent = stats.uniqueMatches || 0;
+
+                    if (stats.lastUpdated) {
+                        const d = new Date(stats.lastUpdated);
+                        document.getElementById('stat-latest').textContent = isNaN(d.getTime())
+                            ? stats.lastUpdated
+                            : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                    } else {
+                        document.getElementById('stat-latest').textContent = 'None yet';
+                    }
+
+                    if (stats.mostChanged) {
+                        document.getElementById('stat-most-changed').textContent =
+                            `${stats.mostChanged.team1} vs ${stats.mostChanged.team2}`;
+                    } else {
+                        document.getElementById('stat-most-changed').textContent = 'N/A';
+                    }
+                }
+
+                if (!historyRes.ok) throw new Error('Failed to load history');
+                const history = await historyRes.json();
+
+                // Populate filter dropdown with unique match dates
+                const dates = [...new Set(history.map(h => h.match_date).filter(Boolean))].sort();
+                const select = document.getElementById('history-date-filter');
+                dates.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d;
+                    const dateObj = new Date(d + 'T12:00:00');
+                    opt.textContent = isNaN(dateObj.getTime()) ? d : dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                    select.appendChild(opt);
+                });
+
+                // Render timeline
+                renderTimeline(history);
+
+                // Set up filter
+                select.addEventListener('change', () => {
+                    const val = select.value;
+                    const filtered = val === 'all' ? history : history.filter(h => h.match_date === val);
+                    renderTimeline(filtered);
+                });
+            } catch (err) {
+                console.error('History error:', err);
+                document.getElementById('history-timeline').innerHTML =
+                    '<p class="history-empty">Unable to load prediction history. Start making predictions to see them here!</p>';
+            } finally {
+                hideLoader('loader');
+            }
+        }
+
+        function renderTimeline(history) {
+            const container = document.getElementById('history-timeline');
+            container.innerHTML = '';
+
+            if (!history || history.length === 0) {
+                container.innerHTML = '<p class="history-empty">No prediction changes recorded yet. Update a match prediction to start tracking!</p>';
+                return;
+            }
+
+            // Group by changed_at date
+            const groups = {};
+            history.forEach(item => {
+                const dateKey = item.changed_at ? item.changed_at.split(' ')[0] || item.changed_at.split('T')[0] : 'Unknown';
+                if (!groups[dateKey]) groups[dateKey] = [];
+                groups[dateKey].push(item);
+            });
+
+            Object.keys(groups).forEach(dateKey => {
+                // Date group header
+                const dateObj = new Date(dateKey + 'T12:00:00');
+                const dateLabel = isNaN(dateObj.getTime()) ? dateKey : dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+                const groupEl = document.createElement('div');
+                groupEl.className = 'timeline-group';
+
+                const header = document.createElement('div');
+                header.className = 'timeline-date-header';
+                header.innerHTML = `<span class="timeline-date-badge">${escapeHtml(dateLabel)}</span>`;
+                groupEl.appendChild(header);
+
+                groups[dateKey].forEach(item => {
+                    const matchDateObj = new Date((item.match_date || '') + 'T12:00:00');
+                    const matchDateStr = isNaN(matchDateObj.getTime())
+                        ? escapeHtml(item.match_date || '')
+                        : matchDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+                    const timeStr = item.changed_at
+                        ? (item.changed_at.split(' ')[1] || item.changed_at.split('T')[1] || '').slice(0, 5)
+                        : '';
+
+                    const oldClass = item.old_prediction === 'Pending' ? 'pending' : 'team-name';
+                    const newClass = item.new_prediction === 'Pending' ? 'pending' : 'team-name';
+
+                    const card = document.createElement('div');
+                    card.className = 'timeline-card';
+                    card.innerHTML = `
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-match-info">
+                                <span class="timeline-teams">${escapeHtml(item.team1)} vs ${escapeHtml(item.team2)}</span>
+                                <span class="timeline-match-date">📅 ${matchDateStr}</span>
+                            </div>
+                            <div class="timeline-change">
+                                <div class="change-from">
+                                    <span class="change-label">From</span>
+                                    <span class="change-value ${oldClass}">${escapeHtml(item.old_prediction || 'Pending')}</span>
+                                </div>
+                                <div class="change-arrow">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+                                        <polyline points="5 12 19 12"></polyline>
+                                        <polyline points="14 7 19 12 14 17"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="change-to">
+                                    <span class="change-label">To</span>
+                                    <span class="change-value ${newClass}">${escapeHtml(item.new_prediction || 'Pending')}</span>
+                                </div>
+                            </div>
+                            <div class="timeline-meta">
+                                <span class="timeline-time">🕐 ${escapeHtml(timeStr)}</span>
+                                <span class="timeline-user">👤 ${escapeHtml(item.changed_by || 'admin')}</span>
+                            </div>
+                        </div>
+                    `;
+                    groupEl.appendChild(card);
+                });
+
+                container.appendChild(groupEl);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', checkAdminAndLoadHistory);
+    </script>
+</body>
+
+</html>
